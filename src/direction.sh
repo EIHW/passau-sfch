@@ -19,8 +19,8 @@ python run_experiments.py --features farl --normalize 1 --name direction_farl --
 
 # TEXT
 
-python run_experiments.py --features bert-4-sentence-level --normalize 1 --name direction_bert --task direction --C 0.001 --weights balanced --kernel poly --poly_degrees 4 --gamma scale --num_seeds 5  --save_checkpoints
+python run_experiments.py --features bert --normalize 1 --name direction_bert --task direction --C 0.001 --weights balanced --kernel poly --poly_degrees 4 --gamma scale --num_seeds 5  --save_checkpoints
 
-python run_experiments.py --features electra-4-sentence-level --normalize 1 --name direction_electra --task direction --C 1 --weights 4 --kernel linear --gamma scale auto --num_seeds 5  --save_checkpoints
+python run_experiments.py --features electra --normalize 1 --name direction_electra --task direction --C 1 --weights 4 --kernel linear --gamma scale auto --num_seeds 5  --save_checkpoints
 
-python run_experiments.py --features sentiment-bert-4-sentence-level --normalize 1 --name direction_sentiment_bert --task direction --C 2 --weights balanced --kernel poly --poly_degree 2 --gamma scale --num_seeds 5  --save_checkpoints
+python run_experiments.py --features sentiment-bert --normalize 1 --name direction_sentiment_bert --task direction --C 2 --weights balanced --kernel poly --poly_degree 2 --gamma scale --num_seeds 5  --save_checkpoints

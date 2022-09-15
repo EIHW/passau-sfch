@@ -19,8 +19,8 @@ python run_rnn_experiments.py --features vggface2 --normalize 0 --name humor_vgg
 
 # TEXT
 
-python run_rnn_experiments.py --features electra-4-sentence-level --normalize 0 --name humor_electra --task humor --rnn_hidden_dims 128 --rnn_num_layers 4 --directions bi --lr 0.001 --rnn_dropout 0. --num_seeds 5 --save_checkpoints --save_predictions
+python run_rnn_experiments.py --features electra --normalize 0 --name humor_electra --task humor --rnn_hidden_dims 128 --rnn_num_layers 4 --directions bi --lr 0.001 --rnn_dropout 0. --num_seeds 5 --save_checkpoints --save_predictions
 
-python run_rnn_experiments.py --features bert-4-sentence-level --normalize 0 --name humor_bert --task humor --rnn_hidden_dims 64 --rnn_num_layers 4 --directions uni --lr 0.001 --rnn_dropout 0. --num_seeds 5 --save_checkpoints --save_predictions
+python run_rnn_experiments.py --features bert --normalize 0 --name humor_bert --task humor --rnn_hidden_dims 64 --rnn_num_layers 4 --directions uni --lr 0.001 --rnn_dropout 0. --num_seeds 5 --save_checkpoints --save_predictions
 
-python run_rnn_experiments.py --features sentiment-bert-4-sentence-level --normalize 0 --name humor_sentiment_bert --task humor --rnn_hidden_dims 256 --rnn_num_layers 2 --directions uni --lr 0.001 --rnn_dropout 0. --num_seeds 5 --save_checkpoints --save_predictions
+python run_rnn_experiments.py --features sentiment-bert --normalize 0 --name humor_sentiment_bert --task humor --rnn_hidden_dims 256 --rnn_num_layers 2 --directions uni --lr 0.001 --rnn_dropout 0. --num_seeds 5 --save_checkpoints --save_predictions

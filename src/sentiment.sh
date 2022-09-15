@@ -19,8 +19,8 @@ python run_experiments.py --features farl --normalize 1 --name sentiment_farl --
 
 # TEXT
 
-python run_experiments.py --features bert-4-sentence-level --normalize 1 --name sentiment_bert --task sentiment --C 1 --weights 4 --kernel rbf --gamma scale --num_seeds 5  --save_checkpoints
+python run_experiments.py --features bert --normalize 1 --name sentiment_bert --task sentiment --C 1 --weights 4 --kernel rbf --gamma scale --num_seeds 5  --save_checkpoints
 
-python run_experiments.py --features electra-4-sentence-level --normalize 1 --name sentiment_electra --task sentiment --C 10 --weights 4 --kernel rbf --gamma scale auto --num_seeds 5  --save_checkpoints
+python run_experiments.py --features electra --normalize 1 --name sentiment_electra --task sentiment --C 10 --weights 4 --kernel rbf --gamma scale auto --num_seeds 5  --save_checkpoints
 
-python run_experiments.py --features sentiment-bert-4-sentence-level --normalize 1 --name sentiment_sentiment_bert --task sentiment --C 10 --weights balanced --kernel rbf --gamma auto --num_seeds 5  --save_checkpoints
+python run_experiments.py --features sentiment-bert --normalize 1 --name sentiment_sentiment_bert --task sentiment --C 10 --weights balanced --kernel rbf --gamma auto --num_seeds 5  --save_checkpoints

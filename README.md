@@ -7,9 +7,10 @@ Includes scripts for hyperparameter search and/or leave-one-out training & evalu
 ## Data
 
 The Passau-SFCH dataset is available upon request at this [Zenodo-Link](add link here).
-Please download the EULA [here](add link here) and send it to 
-lukas\[dot\]christ\[at\]informatik\[dot\]uni-augsburg\[dot\]de. Please note that the EULA must be filled and signed 
-by a Professor.
+Please download the EULA [here](https://drive.google.com/file/d/1vSFvDWokMQsISYIvnIv1wizeLuhKqzvc/view?usp=sharing) 
+and send it to lukas\[dot\]christ\[at\]informatik\[dot\]uni-augsburg\[dot\]de. Please note that the EULA must be 
+filled and signed by a Professor and the data can only be shared with academic groups for non-commercial research
+purposes.
 
 Copy the directories ``features`` and ``labels`` as top-level-directories into the repo. Alternatively, 
 adapt ``global_vars.py`` accordingly. 
