@@ -1,0 +1,11 @@
+features/
+cache/
+*.pyc
+*.pickle
+venv/
+data/
+predictions/
+results/
+checkpoints/
+.idea/
+labels/
