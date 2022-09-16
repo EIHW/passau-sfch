@@ -13,7 +13,6 @@ device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cp
 
 ROOT_DIR = Path(os.path.dirname(os.path.abspath(__file__))).parent
 DATA_DIR = os.path.join(ROOT_DIR, 'data')
-ANNOTATIONS_DIR = os.path.join(DATA_DIR, 'annotations')
 
 FEATURE_DIR = os.path.join(ROOT_DIR, 'features')
 
@@ -27,7 +26,6 @@ RESULT_DIR = os.path.join(ROOT_DIR, 'results')
 LABEL_DIR = os.path.join(ROOT_DIR, 'labels')
 
 CHECKPOINT_DIR = os.path.join(ROOT_DIR, 'checkpoints')
-
 
 # TASKS
 HUMOR = 'humor'

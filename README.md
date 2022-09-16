@@ -6,8 +6,8 @@ Includes scripts for hyperparameter search and/or leave-one-out training & evalu
 
 ## Data
 
-The Passau-SFCH dataset is available upon request at this [Zenodo-Link](add link here).
-Please download the EULA [here](https://drive.google.com/file/d/1vSFvDWokMQsISYIvnIv1wizeLuhKqzvc/view?usp=sharing) 
+The Passau-SFCH dataset is available upon request at this [Zenodo-Link](https://zenodo.org/record/7086222).
+Please download the EULA [here](https://drive.google.com/file/d/1bt6o8OVjzBtqjqwWRtHg1Bc6sFWtwp43/view?usp=sharing) 
 and send it to lukas\[dot\]christ\[at\]informatik\[dot\]uni-augsburg\[dot\]de. Please note that the EULA must be 
 filled and signed by a Professor and the data can only be shared with academic groups for non-commercial research
 purposes.
@@ -23,7 +23,7 @@ It is highly recommended to create a new Python venv and installing the provided
 This repository contains the code to reproduce the experiments in the abovementioned paper. GRUs are used for the humour 
 recognition task, while SVMs are employed for sentiment and direction prediction.
 
-Before running any script, the paths in ``global_vars.py`` must be updated.
+Before running any script, the paths in ``global_vars.py`` must be reviewed, and if necessary, updated.
 
 For all three tasks, the following steps can be executed:
 * hyperparameter search on the whole dataset
