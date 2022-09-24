@@ -47,7 +47,7 @@ def preprocess(arr, standardization=None):
     return arr
 
 def load_train_auc(i, feature, coach):
-    result_json = os.path.join(RESULT_DIR, args.task, i, 'all_results.json')
+    result_json = os.path.join(RESULT_DIR, args.task, 'rnn' if args.task=='humor' else 'svc', i, 'all_results.json')
     result_dict = json.load(open(result_json, 'r'))['results'][feature]['results'][coach]
     if 'train' in result_dict.keys():
         return result_dict['train']['auc']['mean']
@@ -88,7 +88,7 @@ if __name__ == '__main__':
     # load predictions
     coach_preds = {c:[] for c in COACHES}
     for idx,i in enumerate(args.ids):
-        pred_dir = os.path.join(PREDICTIONS_DIR, args.task, i, args.features[idx])
+        pred_dir = os.path.join(PREDICTIONS_DIR, args.task, 'rnn' if args.task=='humor' else 'svc', i, args.features[idx])
         for c in COACHES:
             pred_df = pd.read_csv(os.path.join(pred_dir, f'{c}.csv'))
             coach_preds[c].append(preprocess(
