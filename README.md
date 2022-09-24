@@ -82,7 +82,7 @@ script parameters.
 
 ### Results
 Each run will receive an ID based on the features and the current system time. The result information will be 
-placed in ``global_vars.RESULT_DIR/task/svc/ID``, where ``task` is either ``sentiment`` or ``direction``.
+placed in ``global_vars.RESULT_DIR/task/svc/ID``, where ``task`` is either ``sentiment`` or ``direction``.
 
 ### Loading and Evaluating Checkpoints
 
@@ -97,7 +97,8 @@ The ``late_fusion.py`` script ingests prediction csvs`and result jsons produced 
 Late Fusion is conducted for each coach separately, the weights per feature are computed based on the performance of the other 
 9 coaches during the leave-one-out training in the underlying experiments. 
 
-``late_fusion.py`` requires the user to specify a ``--task`` (``humor``, ``sentiment``, ``direction``), the 
+``late_fusion.py`` requires the user to specify a ``--task`` (``humor``, ``sentiment``, ``direction``), an arbitrary 
+``--name``, the 
 feature names (``--features``) and the IDs of the underlying unimodal experiments (``--ids``). 
 The IDs are corresponding to the experiment's result directory name (the directory that contains ``all_results.json``).
 
