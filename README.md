@@ -1,6 +1,6 @@
 # Multimodal Prediction of Spontaneous Humour: A Novel Dataset and Results
 
-Code used for the paper *Multimodal Prediction of Spontaneous Humour: A Novel Dataset and Results*.
+Code used for the paper *Multimodal Prediction of Spontaneous Humour: A Novel Dataset and Results*. (ArXiv link will follow here).
 
 Includes scripts for hyperparameter search and/or leave-one-out training & evaluation.
 
