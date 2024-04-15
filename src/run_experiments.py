@@ -172,6 +172,8 @@ def svm_experiment(db:pd.DataFrame,
     :param prediction_dir: directory to save predictions in
     :return: dictionary including the best parameters and the results
     '''
+    # TODO load_multimodal_segm_ds or the like
+    X,_,y,coach_idxs = load_multimodal_segm_ds(db, feature_v, feature_a, feature_t, normalize_v, normalize_a, normalize_t)
     X, _, y, coach_idxs = load_whole_ds(db, feature, target, normalize=normalize, reduction=reduction)
     if not class_weights is None:
         new_cw = [linspace_weights(y, w) for w in class_weights if type(w) == float]
