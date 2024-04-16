@@ -86,8 +86,9 @@ def stratify(X, lengths, y, idxs, seed, train_size=0.8):
 
 def stratify_mm(train_features, train_labels, seed, train_size=0.8):
     # stratify per coach
-    Xs1 = []
-    Xs2 = []
+    modalities = ['v', 'a', 't']
+    Xs1 = {m:[] for m in modalities}
+    Xs2 = {m:[] for m in modalities}
     ys1 = []
     ys2 = []
 
@@ -102,11 +103,11 @@ def stratify_mm(train_features, train_labels, seed, train_size=0.8):
         coach_test_segments = segments[coach_test_idxs]
         x_dct_train = {}
         x_dct_test = {}
-        for m in ['v', 'a', 't']:
-            x_dct_train[m] = {str(seg): train_features[m][i][str(seg)] for seg in coach_train_segments}
-            x_dct_test[m] = {str(seg): train_features[m][i][str(seg)] for seg in coach_test_segments}
-        Xs1.append(x_dct_train)
-        Xs2.append(x_dct_test)
+        for m in modalities:
+            Xs1[m].append({str(seg): train_features[m][i][str(seg)] for seg in coach_train_segments})
+            Xs2[m].append({str(seg): train_features[m][i][str(seg)] for seg in coach_test_segments})
+        #Xs1.append(x_dct_train)
+        #Xs2.append(x_dct_test)
         ys1.append({str(seg): train_labels[i][str(seg)] for seg in coach_train_segments})
         ys2.append({str(seg): train_labels[i][str(seg)] for seg in coach_test_segments})
         print(splitted)

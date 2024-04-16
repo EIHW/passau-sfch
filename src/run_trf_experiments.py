@@ -24,7 +24,7 @@ import json
 
 import pandas as pd
 
-from models.transformers import CustomMM
+from models.transformers import CustomMM, EMB_TYPES
 from train_eval.evaluation import evaluate_cont
 
 from tqdm import tqdm
@@ -48,15 +48,17 @@ def parse_args():
                              'Must give three numbers.')
 
     ##### HYPERPARAMETERS #######
-    # lstm parameters
+    # transformer parameters
     parser.add_argument('--trf_num_heads', type=int, nargs='+', default=[4])
     parser.add_argument('--trf_num_v_layers', type=int, nargs='+', default=[1])
     parser.add_argument('--trf_num_at_layers', type=int, nargs='+', default=[1])
+    parser.add_argument('--trf_pos_emb', type=str, nargs='+', choices=EMB_TYPES, default=EMB_TYPES)
     # training parameters
     parser.add_argument('--lr', type=float, nargs='+', default=[0.01, 0.001, 0.005, 0.0001, 0.0005])
     parser.add_argument('--num_seeds', type=int, default=5)
     parser.add_argument('--seed', type=int, default = 101)
     parser.add_argument('--rnn_dropout', type=float, nargs='+', default=[0.])
+    parser.add_argument('--regularization', nargs='+', default=[0.])
     parser.add_argument('--train_batch_size', type=int, default=4)
     parser.add_argument('--devtest_batch_size', type=int, default=8)
     #parser.add_argument('--dropout', type=float, default=0.5)
@@ -164,7 +166,7 @@ def mm_collate_fn(batch, ignore_index=-100):
         if np.floor((max_x_len + i - 4) / 2 + 1).astype(np.int32) == max_label_len:
             pad_to = max_x_len + i
             break
-    print(max_x_len, max_label_len, pad_to)
+    #print(max_x_len, max_label_len, pad_to)
     masks = create_mask(lens, pad_to=pad_to)
     # TODO pad Xs
     X_padded_v = [np.pad(x, ((0, pad_to - x.shape[0]), (0,0))) for x in X_vs]
@@ -367,8 +369,9 @@ if __name__ == '__main__':
     db, label_mapping, target_col = load_task_data(task=HUMOR)
 
     configurations = [
-        Namespace(**{'trf_num_heads': c[0], 'trf_num_v_layers': c[1], 'trf_num_at_layers': c[2], 'lr': c[3]}) for c in
-        product(args.trf_num_heads, args.trf_num_v_layers, args.trf_num_at_layers, args.lr)]
+        Namespace(**{'trf_num_heads': c[0], 'trf_num_v_layers': c[1], 'trf_num_at_layers': c[2], 'lr': c[3],
+                     'regularization': c[4], 'trf_pos_emb': c[5]}) for c in
+        product(args.trf_num_heads, args.trf_num_v_layers, args.trf_num_at_layers, args.lr, args.regularization, args.trf_pos_emb)]
 
     # TODO adapt later
     if args.eval_cp_only:
@@ -380,7 +383,7 @@ if __name__ == '__main__':
                              normalize=args.normalize[0], target= target_col, target_json=args.cp_eval_json)
         sys.exit(0)
 
-    experiment_str = os.path.join(HUMOR, 'trf')
+    experiment_str = os.path.join(HUMOR, 'trf', "_".join([args.features_v, args.features_a, args.features_t]))
 
     res_dir = os.path.join(RESULT_DIR, experiment_str, args.name)
     os.makedirs(res_dir, exist_ok=True)
@@ -396,7 +399,7 @@ if __name__ == '__main__':
     scoring = roc_auc_score
 
     res_dict = {'config': {'params': {k:vars(args)[k] for k in ['trf_num_heads', 'trf_num_v_layers', 'trf_num_at_layers',
-                                                                'lr']},
+                                                                'lr', 'regularization', 'trf_pos_emb']},
                            'target': target_col,
                            'cli_args': vars(args)},
                 'results': {}}
@@ -457,7 +460,7 @@ if __name__ == '__main__':
 
                     model = CustomMM(config)
 
-                    optimizer = AdamW(lr = config.lr, params=model.parameters(), weight_decay=0.5)
+                    optimizer = AdamW(lr = config.lr, params=model.parameters(), weight_decay=config.regularization)
 
                     flat_labels = train_loader.dataset.get_flat_labels()
                     weights = init_weights(flat_labels).float()
@@ -474,11 +477,13 @@ if __name__ == '__main__':
             if config_score > best_score:
                 best_score = config_score
                 best_config = config
+        config = best_config
 
             #feature_dict['best_params'] = vars(best_config)
 
     else:
         print('Only one config given, no hyperparameter search.')
+        config = configurations[0]
     # load best config and test
     print()
     if len(configurations) > 1:
@@ -489,7 +494,7 @@ if __name__ == '__main__':
     coach_results = {coach:{'test':{}} for coach in COACHES}
 
     if args.save_predictions:
-        feature_pred_dir = os.path.join(pred_dir, feature)
+        feature_pred_dir = os.path.join(pred_dir, "_".join([args.features_v, args.features_a, args.features_t]))
         os.makedirs(feature_pred_dir, exist_ok=True)
 
     if args.save_checkpoints:
@@ -521,6 +526,8 @@ if __name__ == '__main__':
                                       shuffle=True, collate_fn=mm_collate_fn)
             val_loader = DataLoader(MMDataset(val_features, val_labels), batch_size=args.devtest_batch_size,
                                     shuffle=False, collate_fn=mm_collate_fn)
+
+            #config = best_config
             v_dim, a_dim, t_dim = train_loader.dataset.get_dims()
             # params = Namespace()
             config.v_dim = v_dim
@@ -530,7 +537,7 @@ if __name__ == '__main__':
 
             model = CustomMM(config)
 
-            optimizer = AdamW(lr=config.lr, params=model.parameters(), weight_decay=0.5)
+            optimizer = AdamW(lr=config.lr, params=model.parameters(), weight_decay=config.regularization)
 
             flat_labels = train_loader.dataset.get_flat_labels()
             weights = init_weights(flat_labels).float()
@@ -554,7 +561,7 @@ if __name__ == '__main__':
             coach_results[coach]['test'].update({f'{k}.mean': np.mean(sss_as_lists[k]),
                                              f'{k}.std':np.std(sss_as_lists[k])})
         #feature_dict['results'] = unflatten_dict(coach_results)
-        res_dict['results'] = unflatten_dict(coach_results)
+        res_dict['results']["_".join([args.features_v, args.features_a, args.features_t])] = {'results': unflatten_dict(coach_results)}
 
         # in case predictions should be saved
         if args.save_predictions:
@@ -567,6 +574,8 @@ if __name__ == '__main__':
             cp_file = os.path.join(cp_dir, f'{coach}_left_out.pt')
             torch.save(best_state_dict, cp_file)
 
+    # fix res dct
+    res_dict['results'] = res_dict['results']["_".join([args.features_v, args.features_a, args.features_t])]['results']
     json.dump(res_dict, open(result_json, 'w+'))
 
     for i,summarization_key in enumerate(args.summarization_keys):

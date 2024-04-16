@@ -2,6 +2,11 @@ from argparse import Namespace
 
 import torch.nn as nn
 import torch
+import numpy as np
+
+SINUSOID = 'sinus'
+LEARNABLE = 'learn'
+EMB_TYPES = [SINUSOID, LEARNABLE]
 
 
 class FFN(torch.nn.Module):
@@ -44,9 +49,16 @@ class CustomMM(nn.Module):
         self.t_projection = nn.Linear(params.t_dim, params.v_dim, bias=False)
         self.tanh = nn.Tanh()
 
-        self.pos_v = nn.Embedding(num_embeddings=params.max_length+1, embedding_dim=params.v_dim)
-        self.pos_a = nn.Embedding(num_embeddings=params.max_length+1, embedding_dim=params.v_dim)
-        self.pos_t = nn.Embedding(num_embeddings=params.max_length+1, embedding_dim=params.v_dim)
+        # TODO weight sharing?
+        if params.trf_pos_emb == LEARNABLE:
+            self.pos_v = nn.Embedding(num_embeddings=params.max_length+1, embedding_dim=params.v_dim)
+            self.pos_a = nn.Embedding(num_embeddings=params.max_length+1, embedding_dim=params.v_dim)
+            self.pos_t = nn.Embedding(num_embeddings=params.max_length+1, embedding_dim=params.v_dim)
+        elif params.trf_pos_emb == SINUSOID:
+            self.pos_v = create_positional_embeddings_matrix(max_seq_len=params.max_length, dim=params.v_dim)
+            self.pos_a = self.pos_v
+            self.pos_t = self.pos_v
+
 
         v_transformer_layer = nn.TransformerEncoderLayer(d_model=params.v_dim, nhead=params.trf_num_heads,
                                                               batch_first=True)
@@ -102,6 +114,16 @@ def indices_from_mask(mask):
     full_indices = torch.vstack([full_row]*mask.shape[0])
     masked = full_indices * mask
     return masked.long()
+
+# from https://machinelearningmastery.com/a-gentle-introduction-to-positional-encoding-in-transformer-models-part-1/
+def create_positional_embeddings_matrix(max_seq_len, dim, n=10000):
+    matrix = np.zeros((max_seq_len+1, dim)) # +1 because of zero padding
+    for k in range(max_seq_len):
+        for i in np.arange(int(dim/2)):
+            denominator = np.power(n, 2*i/dim)
+            matrix[k, 2*i] = np.sin(k/denominator)
+            matrix[k, 2*i+1] = np.cos(k/denominator)
+    return torch.nn.Embedding(num_embeddings=matrix.shape[0], embedding_dim = dim, padding_idx=0, _freeze=True)
 
 # test
 # dim_v = 32
