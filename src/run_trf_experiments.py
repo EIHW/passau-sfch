@@ -474,6 +474,8 @@ if __name__ == '__main__':
                 seed_scores.append(np.mean(coach_scores))
 
             config_score = np.mean(seed_scores)
+            print(f'Finished training for config {config}')
+            print(f'Score: {np.mean(seed_scores)}')
             if config_score > best_score:
                 best_score = config_score
                 best_config = config

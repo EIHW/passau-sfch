@@ -93,7 +93,7 @@ class CustomMM(nn.Module):
         t = self.tanh(self.t_projection(t)) # BS, SL, dim
 
         # Todo positional embeddings
-        emb_indices = indices_from_mask(mask)
+        emb_indices = indices_from_mask(mask).to(v.get_device())
         v_pos = self.pos_v(emb_indices)
         a_pos = self.pos_a(emb_indices)
         t_pos = self.pos_t(emb_indices)
