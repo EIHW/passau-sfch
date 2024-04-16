@@ -93,7 +93,7 @@ class CustomMM(nn.Module):
         t = self.tanh(self.t_projection(t)) # BS, SL, dim
 
         # Todo positional embeddings
-        emb_indices = indices_from_mask(mask).to(v.get_device())
+        emb_indices = self.indices_from_mask(mask)
         v_pos = self.pos_v(emb_indices)
         a_pos = self.pos_a(emb_indices)
         t_pos = self.pos_t(emb_indices)
@@ -115,11 +115,11 @@ class CustomMM(nn.Module):
         return self.classification(self.dropout(representation))
 
 
-def indices_from_mask(mask):
-    full_row = torch.range(1, mask.shape[-1])
-    full_indices = torch.vstack([full_row]*mask.shape[0])
-    masked = full_indices * mask
-    return masked.long()
+    def indices_from_mask(self, mask):
+        full_row = torch.range(1, mask.shape[-1])
+        full_indices = torch.vstack([full_row]*mask.shape[0])
+        masked = full_indices * mask
+        return masked.long()
 
 # from https://machinelearningmastery.com/a-gentle-introduction-to-positional-encoding-in-transformer-models-part-1/
 def create_positional_embeddings_matrix(max_seq_len, dim, n=10000):
