@@ -45,8 +45,8 @@ class CustomMM(nn.Module):
 
     def __init__(self, params, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.a_projection = nn.Linear(params.a_dim, params.v_dim, bias=False)
-        self.t_projection = nn.Linear(params.t_dim, params.v_dim, bias=False)
+        self.a_projection = nn.Linear(params.a_dim, params.v_dim)
+        self.t_projection = nn.Linear(params.t_dim, params.v_dim)
         self.tanh = nn.Tanh()
 
         # TODO weight sharing?
@@ -83,9 +83,9 @@ class CustomMM(nn.Module):
 
 
     def forward(self, v:torch.Tensor, a, t, mask):
-        print(v.get_device())
-        print(a.get_device())
-        print(t.get_device())
+        #print(v.get_device())
+        #print(a.get_device())
+        #print(t.get_device())
         a = self.tanh(self.a_projection(a)) # BS, SL, dim
         t = self.tanh(self.t_projection(t)) # BS, SL, dim
 
