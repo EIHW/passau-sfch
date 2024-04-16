@@ -58,7 +58,7 @@ def parse_args():
     parser.add_argument('--num_seeds', type=int, default=5)
     parser.add_argument('--seed', type=int, default = 101)
     parser.add_argument('--rnn_dropout', type=float, nargs='+', default=[0.])
-    parser.add_argument('--regularization', nargs='+', default=[0.])
+    parser.add_argument('--regularization', nargs='+', type=float, default=[0.])
     parser.add_argument('--train_batch_size', type=int, default=4)
     parser.add_argument('--devtest_batch_size', type=int, default=8)
     #parser.add_argument('--dropout', type=float, default=0.5)
@@ -443,7 +443,6 @@ if __name__ == '__main__':
                     # folds
                 coach_scores = []
                 for i in tqdm(range(len(COACHES))):
-                    # TODO implement
                     (train_features, train_labels), (val_features, val_labels) = loo_mm_dcts(feature_dcts, label_dcts, leave_out=i)
 
                     train_loader = DataLoader(MMDataset(train_features, train_labels), batch_size=args.train_batch_size,
