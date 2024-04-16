@@ -116,8 +116,11 @@ class CustomMM(nn.Module):
 
 
     def indices_from_mask(self, mask):
+        print(mask.get_device())
         full_row = torch.range(1, mask.shape[-1])
+        print(full_row.get_device())
         full_indices = torch.vstack([full_row]*mask.shape[0])
+        print(full_indices.get_device())
         masked = full_indices * mask
         return masked.long()
 
