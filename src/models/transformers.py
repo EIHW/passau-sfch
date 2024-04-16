@@ -82,7 +82,10 @@ class CustomMM(nn.Module):
         self.pooling = nn.MaxPool2d(kernel_size=(4,1), stride=(2,1))
 
 
-    def forward(self, v, a, t, mask):
+    def forward(self, v:torch.Tensor, a, t, mask):
+        print(v.get_device())
+        print(a.get_device())
+        print(t.get_device())
         a = self.tanh(self.a_projection(a)) # BS, SL, dim
         t = self.tanh(self.t_projection(t)) # BS, SL, dim
 
