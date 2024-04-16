@@ -466,7 +466,7 @@ if __name__ == '__main__':
 
                     # make sure negative class has weight 1
                     weights = weights / weights[0]
-                    loss_fn = BCEWithLogitsLoss(pos_weight=weights[1], reduction='mean')
+                    loss_fn = BCEWithLogitsLoss(pos_weight=weights[1].to(device), reduction='mean')
 
                     coach_scores.append(training(model, optimizer, loss_fn, epochs=args.epochs, patience=args.patience,
                                                      train_loader=train_loader, val_loader=val_loader)[0])
