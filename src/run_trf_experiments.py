@@ -458,6 +458,7 @@ if __name__ == '__main__':
 
 
                     model = CustomMM(config)
+                    model.to(device)
 
                     optimizer = AdamW(lr = config.lr, params=model.parameters(), weight_decay=config.regularization)
 
@@ -535,6 +536,7 @@ if __name__ == '__main__':
             config.max_length = 1024  # args.max_training_length
 
             model = CustomMM(config)
+            model.to(device)
 
             optimizer = AdamW(lr=config.lr, params=model.parameters(), weight_decay=config.regularization)
 

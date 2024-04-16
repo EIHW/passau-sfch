@@ -83,11 +83,11 @@ class CustomMM(nn.Module):
 
 
     def forward(self, v:torch.Tensor, a, t, mask):
-        print(v.get_device())
-        print(a.get_device())
-        print(t.get_device())
-        print(self.a_projection.weight.get_device())
-        print(self.a_projection.bias.get_device())
+        #print(v.get_device())
+        #print(a.get_device())
+        #print(t.get_device())
+        #print(self.a_projection.weight.get_device())
+        #print(self.a_projection.bias.get_device())
 
         a = self.tanh(self.a_projection(a)) # BS, SL, dim
         t = self.tanh(self.t_projection(t)) # BS, SL, dim
