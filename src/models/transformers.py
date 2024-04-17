@@ -34,7 +34,7 @@ class CustomTransformerEncoderLayer(torch.nn.Module):
         self.do2 = torch.nn.Dropout(dropout)
 
     def forward(self, query, key, value, key_padding_mask):
-        x = self.mha(query, key, value, key_padding_mask=key_padding_mask)[0]
+        x, att = self.mha(query, key, value, key_padding_mask=key_padding_mask)
         x = self.do1(x) + value
         x = self.norm1(x)
         x_ff = self.ffn(x)
@@ -64,19 +64,19 @@ class CustomMM(nn.Module):
 
 
         v_transformer_layer = nn.TransformerEncoderLayer(d_model=params.trf_model_dim, nhead=params.trf_num_heads,
-                                                              batch_first=True)
+                                                              batch_first=True, dim_feedforward=2*params.trf_model_dim)
         self.v_transformer = nn.TransformerEncoder(v_transformer_layer, num_layers=params.trf_num_v_layers)
 
         a_transformer_layer = nn.TransformerEncoderLayer(d_model=params.trf_model_dim, nhead=params.trf_num_heads,
-                                                              batch_first=True)
+                                                              batch_first=True, dim_feedforward=2*params.trf_model_dim)
         self.a_transformer = nn.TransformerEncoder(a_transformer_layer, num_layers=params.trf_num_at_layers)
         t_transformer_layer = nn.TransformerEncoderLayer(d_model=params.trf_model_dim, nhead=params.trf_num_heads,
-                                                         batch_first=True)
+                                                         batch_first=True, dim_feedforward=2*params.trf_model_dim)
         self.t_transformer = nn.TransformerEncoder(t_transformer_layer, num_layers=params.trf_num_at_layers)
 
-        self.v2a_transformer = CustomTransformerEncoderLayer(input_dim = params.trf_model_dim, hidden_dim=2048,
-                                                             num_heads=params.trf_num_heads, dropout=0.1)
-        self.v2t_transformer = CustomTransformerEncoderLayer(input_dim=params.trf_model_dim, hidden_dim=2048,
+        self.v2a_transformer = CustomTransformerEncoderLayer(input_dim = params.trf_model_dim,
+                                                             num_heads=params.trf_num_heads, dropout=0.1, hidden_dim=2*params.trf_model_dim)
+        self.v2t_transformer = CustomTransformerEncoderLayer(input_dim=params.trf_model_dim, hidden_dim=2*params.trf_model_dim,
                                                              num_heads=params.trf_num_heads, dropout=0.1)
 
         self.dropout = nn.Dropout(0.5)
