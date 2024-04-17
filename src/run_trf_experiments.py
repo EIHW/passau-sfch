@@ -441,6 +441,7 @@ if __name__ == '__main__':
     best_score = 0
 
     if len(configurations) > 1:
+        csv = os.path.join(res_dir, 'results.csv')
         print(f"Starting gridsearch for {len(configurations)} configurations")
         for n,config in tqdm(list(enumerate(configurations))):
                 #print(f'Hyperparameter Search: Training {n+1} of {len(configurations)} configurations')
@@ -487,6 +488,14 @@ if __name__ == '__main__':
             if config_score > best_score:
                 best_score = config_score
                 best_config = config
+            if os.path.exists(csv):
+                res_df = pd.read_csv(csv)
+            else:
+                res_df = pd.DataFrame(columns=list(vars(config).keys()) + ['AUC'])
+            new_row = vars(config)
+            new_row['AUC'] = config_score
+            res_df = res_df.append(new_row)
+            res_df.to_csv(csv, index=False)
         config = best_config
 
             #feature_dict['best_params'] = vars(best_config)
