@@ -181,7 +181,6 @@ def load_data_for_coaches(db, coaches, feature, target, normalize=False, scaler=
         if unreduced:
             features = features.reshape(features.shape[0], -1, feature_dim)
 
-    # TODO check for segments
     labels = np.concatenate([db[db.coach == c][target].values for c in coaches])
     #print(features.shape)
     return features, lengths, labels, scaler, coach_idxs
@@ -227,6 +226,10 @@ def load_full_seg_data_for_coaches(db, coaches, feature, target, normalize=False
         segments = list(feature_dcts[i].keys())
         coach_df = db[db.coach == coach]
         coach_labels = {seg_id: coach_df[coach_df.segment == seg_id].humor.values for seg_id in segments}
+        for k,v in coach_labels.items():
+            if len(v) == 0:
+                print(k)
+                exit(-1)
         label_dcts.append(coach_labels)
     #print(features.shape)
     # to arrays

@@ -115,6 +115,9 @@ class MMDataset(Dataset):
         self.labels = []
         for d in label_dcts:
             flat_labels.update(d)
+        min_length = np.min([a.shape[0] for a in flat_labels.values()])
+        print([s for s in flat_labels.keys() if flat_labels[s].shape[0] < 4])
+        #print()
         for segment in all_segments:
             self.labels.append(flat_labels[segment])
 
@@ -211,10 +214,10 @@ def training_epoch(model, optimizer, train_loader, loss_fn):
         Xs, masks, y = batch
 
         logits = model(Xs[0].to(device), Xs[1].to(device), Xs[2].to(device), masks.to(device))
-        print(logits.shape)
+        #print(logits.shape)
         logits = logits.squeeze(-1)
-        print(logits.shape)
-        print(y.shape)
+        #print(logits.shape)
+        #print(y.shape)
         loss = loss_fn(logits, y.float().to(device))
         loss.backward()
         optimizer.step()
