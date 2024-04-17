@@ -494,7 +494,7 @@ if __name__ == '__main__':
                 res_df = pd.DataFrame(columns=list(vars(config).keys()) + ['AUC'])
             new_row = vars(config)
             new_row['AUC'] = config_score
-            res_df = res_df.append(new_row)
+            res_df = res_df.append(new_row, ignore_index=True)
             res_df.to_csv(csv, index=False)
         config = best_config
 
