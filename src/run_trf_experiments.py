@@ -210,7 +210,11 @@ def training_epoch(model, optimizer, train_loader, loss_fn):
         optimizer.zero_grad()
         Xs, masks, y = batch
 
-        logits = model(Xs[0].to(device), Xs[1].to(device), Xs[2].to(device), masks.to(device)).squeeze(-1)
+        logits = model(Xs[0].to(device), Xs[1].to(device), Xs[2].to(device), masks.to(device))
+        print(logits.shape)
+        logits = logits.squeeze(-1)
+        print(logits.shape)
+        print(y.shape)
         loss = loss_fn(logits, y.float().to(device))
         loss.backward()
         optimizer.step()
