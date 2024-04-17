@@ -4,6 +4,8 @@ import torch.nn as nn
 import torch
 import numpy as np
 
+from global_vars import device
+
 SINUSOID = 'sinus'
 LEARNABLE = 'learn'
 EMB_TYPES = [SINUSOID, LEARNABLE]
@@ -45,39 +47,40 @@ class CustomMM(nn.Module):
 
     def __init__(self, params, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.a_projection = nn.Linear(params.a_dim, params.v_dim)
-        self.t_projection = nn.Linear(params.t_dim, params.v_dim)
+        self.a_projection = nn.Linear(params.a_dim, params.trf_model_dim)
+        self.t_projection = nn.Linear(params.t_dim, params.trf_model_dim)
+        self.v_projection = nn.Linear(params.v_dim, params.trf_model_dim)
         self.tanh = nn.Tanh()
 
         # TODO weight sharing?
         if params.trf_pos_emb == LEARNABLE:
-            self.pos_v = nn.Embedding(num_embeddings=params.max_length+1, embedding_dim=params.v_dim)
-            self.pos_a = nn.Embedding(num_embeddings=params.max_length+1, embedding_dim=params.v_dim)
-            self.pos_t = nn.Embedding(num_embeddings=params.max_length+1, embedding_dim=params.v_dim)
+            self.pos_v = nn.Embedding(num_embeddings=params.max_length+1, embedding_dim=params.trf_model_dim)
+            self.pos_a = nn.Embedding(num_embeddings=params.max_length+1, embedding_dim=params.trf_model_dim)
+            self.pos_t = nn.Embedding(num_embeddings=params.max_length+1, embedding_dim=params.trf_model_dim)
         elif params.trf_pos_emb == SINUSOID:
-            self.pos_v = create_positional_embeddings_matrix(max_seq_len=params.max_length, dim=params.v_dim)
+            self.pos_v = create_positional_embeddings_matrix(max_seq_len=params.max_length, dim=params.trf_model_dim)
             self.pos_a = self.pos_v
             self.pos_t = self.pos_v
 
 
-        v_transformer_layer = nn.TransformerEncoderLayer(d_model=params.v_dim, nhead=params.trf_num_heads,
+        v_transformer_layer = nn.TransformerEncoderLayer(d_model=params.trf_model_dim, nhead=params.trf_num_heads,
                                                               batch_first=True)
         self.v_transformer = nn.TransformerEncoder(v_transformer_layer, num_layers=params.trf_num_v_layers)
 
-        a_transformer_layer = nn.TransformerEncoderLayer(d_model=params.v_dim, nhead=params.trf_num_heads,
+        a_transformer_layer = nn.TransformerEncoderLayer(d_model=params.trf_model_dim, nhead=params.trf_num_heads,
                                                               batch_first=True)
         self.a_transformer = nn.TransformerEncoder(a_transformer_layer, num_layers=params.trf_num_at_layers)
-        t_transformer_layer = nn.TransformerEncoderLayer(d_model=params.v_dim, nhead=params.trf_num_heads,
+        t_transformer_layer = nn.TransformerEncoderLayer(d_model=params.trf_model_dim, nhead=params.trf_num_heads,
                                                          batch_first=True)
         self.t_transformer = nn.TransformerEncoder(t_transformer_layer, num_layers=params.trf_num_at_layers)
 
-        self.v2a_transformer = CustomTransformerEncoderLayer(input_dim = params.v_dim, hidden_dim=2048,
+        self.v2a_transformer = CustomTransformerEncoderLayer(input_dim = params.trf_model_dim, hidden_dim=2048,
                                                              num_heads=params.trf_num_heads, dropout=0.1)
-        self.v2t_transformer = CustomTransformerEncoderLayer(input_dim=params.v_dim, hidden_dim=2048,
+        self.v2t_transformer = CustomTransformerEncoderLayer(input_dim=params.trf_model_dim, hidden_dim=2048,
                                                              num_heads=params.trf_num_heads, dropout=0.1)
 
         self.dropout = nn.Dropout(0.5)
-        self.classification = nn.Linear(3*params.v_dim, 1)
+        self.classification = nn.Linear(3*params.trf_model_dim, 1)
 
         self.pooling = nn.MaxPool2d(kernel_size=(4,1), stride=(2,1))
 
@@ -88,7 +91,7 @@ class CustomMM(nn.Module):
         #print(t.get_device())
         #print(self.a_projection.weight.get_device())
         #print(self.a_projection.bias.get_device())
-
+        v = self.tanh(self.v_projection(v))
         a = self.tanh(self.a_projection(a)) # BS, SL, dim
         t = self.tanh(self.t_projection(t)) # BS, SL, dim
 
@@ -117,7 +120,7 @@ class CustomMM(nn.Module):
 
     def indices_from_mask(self, mask):
         #print(mask.get_device())
-        full_row = torch.range(1, mask.shape[-1]).to(mask.get_device())
+        full_row = torch.range(1, mask.shape[-1]).to(device)
         #print(full_row.get_device())
         full_indices = torch.vstack([full_row]*mask.shape[0])
         #print(full_indices.get_device())
