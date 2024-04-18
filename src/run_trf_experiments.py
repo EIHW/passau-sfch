@@ -222,7 +222,8 @@ def training_epoch(model, optimizer, train_loader, loss_fn, writer, prev_steps):
         logits = logits.squeeze(-1)
         #print(logits.shape)
         #print(y.shape)
-        valid_idxs = y[y > -100]
+        valid_idxs = y > -100
+
         y = y[valid_idxs]
         logits = logits[valid_idxs]
         loss = loss_fn(logits, y.float().to(device))
