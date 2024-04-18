@@ -193,14 +193,17 @@ def create_positional_embeddings_matrix(max_seq_len, dim, n=10000):
 
 FULL = 'full'
 NO_POS = 'no_pos'
+NO_FUSION = 'no_fusion'
 
-MODEL_TYPES = [FULL, NO_POS]
+MODEL_TYPES = [FULL, NO_POS, NO_FUSION]
 
 def get_model_class(model_type):
     if model_type == FULL:
         return CustomMM
     elif model_type == NO_POS:
         return CustomMM_NO_POS
+    elif model_type == NO_FUSION:
+        return CustomMM_NoFusion
     else:
         raise NotImplementedError()
 
@@ -265,6 +268,84 @@ class CustomMM_NO_POS(nn.Module):
 
         a = self.v2a_transformer(query=v, key=a, value=a, key_padding_mask=trf_key_mask, attn_mask=trf_3d_mask)
         t = self.v2t_transformer(query=v, key=t, value=t, key_padding_mask=trf_key_mask, attn_mask=trf_3d_mask)
+
+        representation = torch.concatenate([v,a,t], dim=-1)
+        representation = self.pooling(representation)
+        return self.classification(self.dropout(representation))
+
+
+
+class CustomMM_NoFusion(nn.Module):
+
+    def __init__(self, params, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.a_projection = nn.Linear(params.a_dim, params.trf_model_dim)
+        self.t_projection = nn.Linear(params.t_dim, params.trf_model_dim)
+        self.v_projection = nn.Linear(params.v_dim, params.trf_model_dim)
+        self.tanh = nn.Tanh()
+
+        self.num_heads = params.trf_num_heads
+
+        # TODO weight sharing?
+        if params.trf_pos_emb == LEARNABLE:
+            self.pos_v = nn.Embedding(num_embeddings=params.max_length+1, embedding_dim=params.trf_model_dim)
+            self.pos_a = nn.Embedding(num_embeddings=params.max_length+1, embedding_dim=params.trf_model_dim)
+            self.pos_t = nn.Embedding(num_embeddings=params.max_length+1, embedding_dim=params.trf_model_dim)
+        elif params.trf_pos_emb == SINUSOID:
+            self.pos_v = create_positional_embeddings_matrix(max_seq_len=params.max_length, dim=params.trf_model_dim)
+            self.pos_a = self.pos_v
+            self.pos_t = self.pos_v
+
+
+        v_transformer_layer = nn.TransformerEncoderLayer(d_model=params.trf_model_dim, nhead=params.trf_num_heads,
+                                                              batch_first=True, dim_feedforward=2*params.trf_model_dim)
+        self.v_transformer = nn.TransformerEncoder(v_transformer_layer, num_layers=params.trf_num_v_layers)
+
+        a_transformer_layer = nn.TransformerEncoderLayer(d_model=params.trf_model_dim, nhead=params.trf_num_heads,
+                                                              batch_first=True, dim_feedforward=2*params.trf_model_dim)
+        self.a_transformer = nn.TransformerEncoder(a_transformer_layer, num_layers=params.trf_num_at_layers)
+        t_transformer_layer = nn.TransformerEncoderLayer(d_model=params.trf_model_dim, nhead=params.trf_num_heads,
+                                                         batch_first=True, dim_feedforward=2*params.trf_model_dim)
+        self.t_transformer = nn.TransformerEncoder(t_transformer_layer, num_layers=params.trf_num_at_layers)
+
+        # self.v2a_transformer = CustomTransformerEncoderLayer(input_dim = params.trf_model_dim,
+        #                                                      num_heads=params.trf_num_heads, dropout=0.1, hidden_dim=2*params.trf_model_dim)
+        # self.v2t_transformer = CustomTransformerEncoderLayer(input_dim=params.trf_model_dim, hidden_dim=2*params.trf_model_dim,
+        #                                                      num_heads=params.trf_num_heads, dropout=0.1)
+
+        self.dropout = nn.Dropout(0.5)
+        self.classification = nn.Linear(3*params.trf_model_dim, 1)
+
+        self.pooling = nn.MaxPool2d(kernel_size=(4,1), stride=(2,1))
+
+
+    def forward(self, v:torch.Tensor, a, t, mask):
+        #print(v.get_device())
+        #print(a.get_device())
+        #print(t.get_device())
+        #print(self.a_projection.weight.get_device())
+        #print(self.a_projection.bias.get_device())
+        v = self.tanh(self.v_projection(v))
+        a = self.tanh(self.a_projection(a)) # BS, SL, dim
+        t = self.tanh(self.t_projection(t)) # BS, SL, dim
+
+        emb_indices = indices_from_mask(mask)
+        v_pos = self.pos_v(emb_indices)
+        a_pos = self.pos_a(emb_indices)
+        t_pos = self.pos_t(emb_indices)
+        v = v + v_pos
+        a = a + a_pos
+        t = t + t_pos
+
+
+        trf_key_mask = ~mask.bool()
+        trf_3d_mask = ~get_3d_mask(mask, self.num_heads).bool()
+        v = self.v_transformer(v, src_key_padding_mask = trf_key_mask, mask =trf_3d_mask) # BS, SL, dim
+        a = self.a_transformer(a, src_key_padding_mask = trf_key_mask, mask=trf_3d_mask) # BS, SL ,dim
+        t = self.t_transformer(t, src_key_padding_mask = trf_key_mask, mask=trf_3d_mask) # BS, SL, dim
+
+        #a = self.v2a_transformer(query=v, key=a, value=a, key_padding_mask=trf_key_mask, attn_mask=trf_3d_mask)
+        #t = self.v2t_transformer(query=v, key=t, value=t, key_padding_mask=trf_key_mask, attn_mask=trf_3d_mask)
 
         representation = torch.concatenate([v,a,t], dim=-1)
         representation = self.pooling(representation)
