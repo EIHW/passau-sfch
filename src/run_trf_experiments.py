@@ -539,6 +539,8 @@ if __name__ == '__main__':
 
         for seed in range(args.seed, args.seed+args.num_seeds):
                 # stratified sampling to obtain a development set
+            torch.manual_seed(seed)
+            np.random.seed(seed)
             (train_features, train_labels), (val_features, val_labels) = stratify_mm(train_features, train_labels, seed=seed)
 
             train_loader = DataLoader(MMDataset(train_features, train_labels), batch_size=args.train_batch_size,

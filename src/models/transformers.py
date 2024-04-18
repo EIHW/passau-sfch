@@ -33,8 +33,8 @@ class CustomTransformerEncoderLayer(torch.nn.Module):
         self.do1 = torch.nn.Dropout(dropout)
         self.do2 = torch.nn.Dropout(dropout)
 
-    def forward(self, query, key, value, key_padding_mask):
-        x, att = self.mha(query, key, value, key_padding_mask=key_padding_mask)
+    def forward(self, query, key, value, key_padding_mask, attn_mask):
+        x, att = self.mha(query, key, value, key_padding_mask=key_padding_mask, attn_mask=attn_mask)
         x = self.do1(x) + value
         x = self.norm1(x)
         x_ff = self.ffn(x)
@@ -51,6 +51,8 @@ class CustomMM(nn.Module):
         self.t_projection = nn.Linear(params.t_dim, params.trf_model_dim)
         self.v_projection = nn.Linear(params.v_dim, params.trf_model_dim)
         self.tanh = nn.Tanh()
+
+        self.num_heads = params.trf_num_heads
 
         # TODO weight sharing?
         if params.trf_pos_emb == LEARNABLE:
@@ -105,13 +107,14 @@ class CustomMM(nn.Module):
         t = t + t_pos
 
 
-        trf_mask = ~mask.bool()
-        v = self.v_transformer(v, src_key_padding_mask = trf_mask) # BS, SL, dim
-        a = self.a_transformer(a, src_key_padding_mask = trf_mask) # BS, SL ,dim
-        t = self.t_transformer(t, src_key_padding_mask = trf_mask) # BS, SL, dim
+        trf_key_mask = ~mask.bool()
+        trf_3d_mask = ~self.get_3d_mask(mask).bool()
+        v = self.v_transformer(v, src_key_padding_mask = trf_key_mask, mask =trf_3d_mask) # BS, SL, dim
+        a = self.a_transformer(a, src_key_padding_mask = trf_key_mask, mask=trf_3d_mask) # BS, SL ,dim
+        t = self.t_transformer(t, src_key_padding_mask = trf_key_mask, mask=trf_3d_mask) # BS, SL, dim
 
-        a = self.v2a_transformer(query=v, key=a, value=a, key_padding_mask=trf_mask)
-        t = self.v2t_transformer(query=v, key=t, value=t, key_padding_mask=trf_mask)
+        a = self.v2a_transformer(query=v, key=a, value=a, key_padding_mask=trf_key_mask, attn_mask=trf_3d_mask)
+        t = self.v2t_transformer(query=v, key=t, value=t, key_padding_mask=trf_key_mask, attn_mask=trf_3d_mask)
 
         representation = torch.concatenate([v,a,t], dim=-1)
         representation = self.pooling(representation)
@@ -126,6 +129,18 @@ class CustomMM(nn.Module):
         #print(full_indices.get_device())
         masked = full_indices * mask
         return masked.long()
+
+    def get_3d_mask(self, mask):
+        # mask is initially BS, SL
+        bs = mask.shape[0]
+        sl = mask.shape[1]
+        #mask3d = mask.unsqueeze(-1) # BS, SL, 1
+        mask3d = torch.repeat_interleave(mask, sl, dim=0) # BS, SL*SL
+        mask3d = torch.reshape(mask3d, (bs, sl, sl)) # BS, SL, SL
+        mask3d = torch.repeat_interleave(mask3d, self.num_heads, dim=0) # BS*NH, SL
+        #control = torch.sum(mask3d, dim=-1) # just for debugging
+        #control = torch.mean(control, dim=-1)
+        return mask3d
 
 # from https://machinelearningmastery.com/a-gentle-introduction-to-positional-encoding-in-transformer-models-part-1/
 def create_positional_embeddings_matrix(max_seq_len, dim, n=10000):
