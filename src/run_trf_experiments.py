@@ -13,6 +13,7 @@ from sklearn.metrics import roc_auc_score
 from torch.nn import CrossEntropyLoss, BCEWithLogitsLoss
 from torch.optim import AdamW
 from torch.utils.data import Dataset, DataLoader
+from torch.utils.tensorboard import SummaryWriter
 
 from data_utils.features import load_whole_ds, loo_from_whole_ds, load_multimodal_segm_ds, loo_mm_dcts
 from data_utils.labels import load_task_data, stratify, stratify_mm
@@ -208,9 +209,11 @@ def init_weights(y:np.ndarray):
 
 
 
-def training_epoch(model, optimizer, train_loader, loss_fn):
+def training_epoch(model, optimizer, train_loader, loss_fn, writer, prev_steps):
     model.train()
+    step_counter = prev_steps
     for batch in tqdm(train_loader):
+        step_counter += 1
         optimizer.zero_grad()
         Xs, masks, y = batch
 
@@ -219,10 +222,15 @@ def training_epoch(model, optimizer, train_loader, loss_fn):
         logits = logits.squeeze(-1)
         #print(logits.shape)
         #print(y.shape)
+        valid_idxs = y[y > -100]
+        y = y[valid_idxs]
+        logits = logits[valid_idxs]
         loss = loss_fn(logits, y.float().to(device))
         loss.backward()
+        if not writer is None:
+            writer.add_scalar('train_loss', loss.detach().cpu().numpy(), step_counter)
         optimizer.step()
-    return model
+    return model, step_counter
 
 def extract_logits_and_gs(model:GRUClassifier, val_loader:DataLoader):
     '''
@@ -311,7 +319,7 @@ def extract_predictions(model:GRUClassifier, test_loader:DataLoader) -> dict:
     return {f'pred_{i}':predictions[:,i] for i in range(predictions.shape[1])}
 
 
-def training(model:GRUClassifier, optimizer:torch.optim.Optimizer, loss_fn, epochs, patience, train_loader, val_loader)\
+def training(model:GRUClassifier, optimizer:torch.optim.Optimizer, loss_fn, epochs, patience, train_loader, val_loader, writer: SummaryWriter)\
         -> Tuple[float, GRUClassifier]:
     '''
 
@@ -322,10 +330,13 @@ def training(model:GRUClassifier, optimizer:torch.optim.Optimizer, loss_fn, epoc
     patience_counter = 0
     best_state_dict = None
 
+    step_counter=0
     for epoch in range(1, epochs+1):
         print(f'Epoch {epoch}')
-        model = training_epoch(model, optimizer, train_loader=train_loader, loss_fn=loss_fn)
+        model, step_counter = training_epoch(model, optimizer, train_loader=train_loader, loss_fn=loss_fn, writer=writer, prev_steps=step_counter)
         epoch_result = val_score(model, val_loader)
+        if not (writer is None):
+            writer.add_scalar('auc', epoch_result, epoch)
 
         if epoch_result > best_quality:
             best_quality = epoch_result
@@ -453,6 +464,8 @@ if __name__ == '__main__':
                     # folds
                 coach_scores = []
                 for i in tqdm(range(len(COACHES))):
+                    tb_dir = os.path.join(res_dir, 'tb', f'{n}_{seed}_{i}')
+                    tb = SummaryWriter(tb_dir)
                     (train_features, train_labels), (val_features, val_labels) = loo_mm_dcts(feature_dcts, label_dcts, leave_out=i)
 
                     train_loader = DataLoader(MMDataset(train_features, train_labels), batch_size=args.train_batch_size,
@@ -480,7 +493,8 @@ if __name__ == '__main__':
                     loss_fn = BCEWithLogitsLoss(pos_weight=weights[1].to(device), reduction='mean')
 
                     coach_scores.append(training(model, optimizer, loss_fn, epochs=args.epochs, patience=args.patience,
-                                                     train_loader=train_loader, val_loader=val_loader)[0])
+                                                     train_loader=train_loader, val_loader=val_loader, writer=tb)[0])
+                    tb.close()
                 seed_scores.append(np.mean(coach_scores))
 
             config_score = np.mean(seed_scores)
@@ -523,6 +537,7 @@ if __name__ == '__main__':
 
     print(f'Training {"best" if len(configurations) > 1 else "given"} configuration (leave-one-out scenario)')
     for i,coach in tqdm(list(enumerate(COACHES))):
+
         (train_features, train_labels), (test_features, test_labels) = loo_mm_dcts(feature_dcts, label_dcts, leave_out=i)
 
         test_loader = DataLoader(MMDataset(test_features, test_labels), batch_size=args.devtest_batch_size,
@@ -540,6 +555,8 @@ if __name__ == '__main__':
 
         for seed in range(args.seed, args.seed+args.num_seeds):
                 # stratified sampling to obtain a development set
+            tb_dir = os.path.join(res_dir, 'tb', f'best_config_{i}_{seed}')
+            writer = SummaryWriter(tb_dir)
             torch.manual_seed(seed)
             np.random.seed(seed)
             (train_features, train_labels), (val_features, val_labels) = stratify_mm(train_features, train_labels, seed=seed)
@@ -571,12 +588,13 @@ if __name__ == '__main__':
 
             # TODO continue here (cf. above)
             q, model = training(model, optimizer, loss_fn, epochs=args.epochs, patience=args.patience,
-                                             train_loader=train_loader, val_loader=val_loader)
+                                             train_loader=train_loader, val_loader=val_loader, writer=writer)
             seed_scores.append(test_evaluation(model, test_loader))
             if q > best_test_seed_quality:
                 best_test_seed_quality = q
                 best_test_seed = seed
                 best_state_dict = model.state_dict()
+            writer.close()
 
         coach_results[coach]['best_val'] = best_test_seed_quality
         sss_as_lists = {k:[s[k] for s in seed_scores] for k in seed_scores[0].keys()}
