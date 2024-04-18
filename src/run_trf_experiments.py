@@ -24,7 +24,7 @@ import json
 
 import pandas as pd
 
-from models.transformers import CustomMM, EMB_TYPES
+from models.transformers import CustomMM, EMB_TYPES, MODEL_TYPES, get_model_class, FULL
 from train_eval.evaluation import evaluate_cont
 
 from tqdm import tqdm
@@ -54,6 +54,7 @@ def parse_args():
     parser.add_argument('--trf_num_at_layers', type=int, nargs='+', default=[1])
     parser.add_argument('--trf_pos_emb', type=str, nargs='+', choices=EMB_TYPES, default=EMB_TYPES)
     parser.add_argument('--trf_model_dim', type=int, nargs='+', default=[64])
+    parser.add_argument('--model_type', type=str, choices=MODEL_TYPES, default=FULL)
     # training parameters
     parser.add_argument('--lr', type=float, nargs='+', default=[0.01, 0.001, 0.005, 0.0001, 0.0005])
     parser.add_argument('--num_seeds', type=int, default=5)
@@ -466,7 +467,7 @@ if __name__ == '__main__':
                     config.max_length = 1024#args.max_training_length
 
 
-                    model = CustomMM(config)
+                    model = get_model_class(args.model_type)(config)
                     model.to(device)
 
                     optimizer = AdamW(lr = config.lr, params=model.parameters(), weight_decay=config.regularization)
@@ -556,7 +557,7 @@ if __name__ == '__main__':
             config.t_dim = t_dim
             config.max_length = 1024  # args.max_training_length
 
-            model = CustomMM(config)
+            model = get_model_class(args.model_type)(config)
             model.to(device)
 
             optimizer = AdamW(lr=config.lr, params=model.parameters(), weight_decay=config.regularization)

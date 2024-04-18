@@ -97,8 +97,7 @@ class CustomMM(nn.Module):
         a = self.tanh(self.a_projection(a)) # BS, SL, dim
         t = self.tanh(self.t_projection(t)) # BS, SL, dim
 
-        # Todo positional embeddings
-        emb_indices = self.indices_from_mask(mask)
+        emb_indices = indices_from_mask(mask)
         v_pos = self.pos_v(emb_indices)
         a_pos = self.pos_a(emb_indices)
         t_pos = self.pos_t(emb_indices)
@@ -108,7 +107,7 @@ class CustomMM(nn.Module):
 
 
         trf_key_mask = ~mask.bool()
-        trf_3d_mask = ~self.get_3d_mask(mask).bool()
+        trf_3d_mask = ~get_3d_mask(mask, self.num_heads).bool()
         v = self.v_transformer(v, src_key_padding_mask = trf_key_mask, mask =trf_3d_mask) # BS, SL, dim
         a = self.a_transformer(a, src_key_padding_mask = trf_key_mask, mask=trf_3d_mask) # BS, SL ,dim
         t = self.t_transformer(t, src_key_padding_mask = trf_key_mask, mask=trf_3d_mask) # BS, SL, dim
@@ -121,26 +120,26 @@ class CustomMM(nn.Module):
         return self.classification(self.dropout(representation))
 
 
-    def indices_from_mask(self, mask):
-        #print(mask.get_device())
-        full_row = torch.range(1, mask.shape[-1]).to(device)
-        #print(full_row.get_device())
-        full_indices = torch.vstack([full_row]*mask.shape[0])
-        #print(full_indices.get_device())
-        masked = full_indices * mask
-        return masked.long()
+def indices_from_mask(mask):
+    #print(mask.get_device())
+    full_row = torch.range(1, mask.shape[-1]).to(device)
+    #print(full_row.get_device())
+    full_indices = torch.vstack([full_row]*mask.shape[0])
+    #print(full_indices.get_device())
+    masked = full_indices * mask
+    return masked.long()
 
-    def get_3d_mask(self, mask):
-        # mask is initially BS, SL
-        bs = mask.shape[0]
-        sl = mask.shape[1]
-        #mask3d = mask.unsqueeze(-1) # BS, SL, 1
-        mask3d = torch.repeat_interleave(mask, sl, dim=0) # BS, SL*SL
-        mask3d = torch.reshape(mask3d, (bs, sl, sl)) # BS, SL, SL
-        mask3d = torch.repeat_interleave(mask3d, self.num_heads, dim=0) # BS*NH, SL
-        #control = torch.sum(mask3d, dim=-1) # just for debugging
-        #control = torch.mean(control, dim=-1)
-        return mask3d
+def get_3d_mask(mask, num_heads):
+    # mask is initially BS, SL
+    bs = mask.shape[0]
+    sl = mask.shape[1]
+    #mask3d = mask.unsqueeze(-1) # BS, SL, 1
+    mask3d = torch.repeat_interleave(mask, sl, dim=0) # BS, SL*SL
+    mask3d = torch.reshape(mask3d, (bs, sl, sl)) # BS, SL, SL
+    mask3d = torch.repeat_interleave(mask3d, num_heads, dim=0) # BS*NH, SL
+    #control = torch.sum(mask3d, dim=-1) # just for debugging
+    #control = torch.mean(control, dim=-1)
+    return mask3d
 
 # from https://machinelearningmastery.com/a-gentle-introduction-to-positional-encoding-in-transformer-models-part-1/
 def create_positional_embeddings_matrix(max_seq_len, dim, n=10000):
@@ -192,3 +191,81 @@ def create_positional_embeddings_matrix(max_seq_len, dim, n=10000):
 # test_out = model(v, a, t, mask)
 # print('Test')
 
+FULL = 'full'
+NO_POS = 'no_pos'
+
+MODEL_TYPES = [FULL, NO_POS]
+
+def get_model_class(model_type):
+    if model_type == FULL:
+        return CustomMM
+    elif model_type == NO_POS:
+        return CustomMM_NO_POS
+    else:
+        raise NotImplementedError()
+
+# DUMMY CLASSES
+class CustomMM_NO_POS(nn.Module):
+
+    def __init__(self, params, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.a_projection = nn.Linear(params.a_dim, params.trf_model_dim)
+        self.t_projection = nn.Linear(params.t_dim, params.trf_model_dim)
+        self.v_projection = nn.Linear(params.v_dim, params.trf_model_dim)
+        self.tanh = nn.Tanh()
+
+        self.num_heads = params.trf_num_heads
+
+        v_transformer_layer = nn.TransformerEncoderLayer(d_model=params.trf_model_dim, nhead=params.trf_num_heads,
+                                                              batch_first=True, dim_feedforward=2*params.trf_model_dim)
+        self.v_transformer = nn.TransformerEncoder(v_transformer_layer, num_layers=params.trf_num_v_layers)
+
+        a_transformer_layer = nn.TransformerEncoderLayer(d_model=params.trf_model_dim, nhead=params.trf_num_heads,
+                                                              batch_first=True, dim_feedforward=2*params.trf_model_dim)
+        self.a_transformer = nn.TransformerEncoder(a_transformer_layer, num_layers=params.trf_num_at_layers)
+        t_transformer_layer = nn.TransformerEncoderLayer(d_model=params.trf_model_dim, nhead=params.trf_num_heads,
+                                                         batch_first=True, dim_feedforward=2*params.trf_model_dim)
+        self.t_transformer = nn.TransformerEncoder(t_transformer_layer, num_layers=params.trf_num_at_layers)
+
+        self.v2a_transformer = CustomTransformerEncoderLayer(input_dim = params.trf_model_dim,
+                                                             num_heads=params.trf_num_heads, dropout=0.1, hidden_dim=2*params.trf_model_dim)
+        self.v2t_transformer = CustomTransformerEncoderLayer(input_dim=params.trf_model_dim, hidden_dim=2*params.trf_model_dim,
+                                                             num_heads=params.trf_num_heads, dropout=0.1)
+
+        self.dropout = nn.Dropout(0.5)
+        self.classification = nn.Linear(3*params.trf_model_dim, 1)
+
+        self.pooling = nn.MaxPool2d(kernel_size=(4,1), stride=(2,1))
+
+
+    def forward(self, v:torch.Tensor, a, t, mask):
+        #print(v.get_device())
+        #print(a.get_device())
+        #print(t.get_device())
+        #print(self.a_projection.weight.get_device())
+        #print(self.a_projection.bias.get_device())
+        v = self.tanh(self.v_projection(v))
+        a = self.tanh(self.a_projection(a)) # BS, SL, dim
+        t = self.tanh(self.t_projection(t)) # BS, SL, dim
+
+        # emb_indices = indices_from_mask(mask)
+        # v_pos = self.pos_v(emb_indices)
+        # a_pos = self.pos_a(emb_indices)
+        # t_pos = self.pos_t(emb_indices)
+        # v = v + v_pos
+        # a = a + a_pos
+        # t = t + t_pos
+
+
+        trf_key_mask = ~mask.bool()
+        trf_3d_mask = ~get_3d_mask(mask, self.num_heads).bool()
+        v = self.v_transformer(v, src_key_padding_mask = trf_key_mask, mask =trf_3d_mask) # BS, SL, dim
+        a = self.a_transformer(a, src_key_padding_mask = trf_key_mask, mask=trf_3d_mask) # BS, SL ,dim
+        t = self.t_transformer(t, src_key_padding_mask = trf_key_mask, mask=trf_3d_mask) # BS, SL, dim
+
+        a = self.v2a_transformer(query=v, key=a, value=a, key_padding_mask=trf_key_mask, attn_mask=trf_3d_mask)
+        t = self.v2t_transformer(query=v, key=t, value=t, key_padding_mask=trf_key_mask, attn_mask=trf_3d_mask)
+
+        representation = torch.concatenate([v,a,t], dim=-1)
+        representation = self.pooling(representation)
+        return self.classification(self.dropout(representation))
