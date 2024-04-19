@@ -53,6 +53,7 @@ def parse_args():
     parser.add_argument('--trf_num_heads', type=int, nargs='+', default=[4])
     parser.add_argument('--trf_num_v_layers', type=int, nargs='+', default=[1])
     parser.add_argument('--trf_num_at_layers', type=int, nargs='+', default=[1])
+    parser.add_argument('--trf_num_mm_layers', type=int, nargs='+', default=[1])
     parser.add_argument('--trf_pos_emb', type=str, nargs='+', choices=EMB_TYPES, default=EMB_TYPES)
     parser.add_argument('--trf_model_dim', type=int, nargs='+', default=[64])
     parser.add_argument('--model_type', type=str, choices=MODEL_TYPES, default=FULL)
@@ -391,8 +392,9 @@ if __name__ == '__main__':
 
     configurations = [
         Namespace(**{'trf_num_heads': c[0], 'trf_num_v_layers': c[1], 'trf_num_at_layers': c[2], 'lr': c[3],
-                     'regularization': c[4], 'trf_pos_emb': c[5], 'trf_model_dim': c[6]}) for c in
-        product(args.trf_num_heads, args.trf_num_v_layers, args.trf_num_at_layers, args.lr, args.regularization, args.trf_pos_emb, args.trf_model_dim)]
+                     'regularization': c[4], 'trf_pos_emb': c[5], 'trf_model_dim': c[6], 'trf_num_mm_layers': c[7]}) for c in
+        product(args.trf_num_heads, args.trf_num_v_layers, args.trf_num_at_layers, args.lr, args.regularization,
+                args.trf_pos_emb, args.trf_model_dim, args.trf_num_mm_layers)]
 
     # TODO adapt later
     if args.eval_cp_only:
@@ -420,7 +422,8 @@ if __name__ == '__main__':
     scoring = roc_auc_score
 
     res_dict = {'config': {'params': {k:vars(args)[k] for k in ['trf_num_heads', 'trf_num_v_layers', 'trf_num_at_layers',
-                                                                'lr', 'regularization', 'trf_pos_emb', 'trf_model_dim']},
+                                                                'lr', 'regularization', 'trf_pos_emb', 'trf_model_dim',
+                                                                'trf_num_mm_layers']},
                            'target': target_col,
                            'cli_args': vars(args)},
                 'results': {}}

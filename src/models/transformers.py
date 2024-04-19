@@ -81,21 +81,35 @@ class CustomMM(nn.Module):
             self.pos_t = self.pos_v
 
 
-        v_transformer_layer = nn.TransformerEncoderLayer(d_model=params.trf_model_dim, nhead=params.trf_num_heads,
+        if params.trf_num_v_layers > 0:
+            v_transformer_layer = nn.TransformerEncoderLayer(d_model=params.trf_model_dim, nhead=params.trf_num_heads,
                                                               batch_first=True, dim_feedforward=2*params.trf_model_dim)
-        self.v_transformer = nn.TransformerEncoder(v_transformer_layer, num_layers=params.trf_num_v_layers)
+            self.v_transformer = nn.TransformerEncoder(v_transformer_layer, num_layers=params.trf_num_v_layers)
+        else:
+            self.v_transformer = None
 
-        a_transformer_layer = nn.TransformerEncoderLayer(d_model=params.trf_model_dim, nhead=params.trf_num_heads,
+        if params.trf_num_at_layers > 0:
+            a_transformer_layer = nn.TransformerEncoderLayer(d_model=params.trf_model_dim, nhead=params.trf_num_heads,
                                                               batch_first=True, dim_feedforward=2*params.trf_model_dim)
-        self.a_transformer = nn.TransformerEncoder(a_transformer_layer, num_layers=params.trf_num_at_layers)
-        t_transformer_layer = nn.TransformerEncoderLayer(d_model=params.trf_model_dim, nhead=params.trf_num_heads,
+            self.a_transformer = nn.TransformerEncoder(a_transformer_layer, num_layers=params.trf_num_at_layers)
+            t_transformer_layer = nn.TransformerEncoderLayer(d_model=params.trf_model_dim, nhead=params.trf_num_heads,
                                                          batch_first=True, dim_feedforward=2*params.trf_model_dim)
-        self.t_transformer = nn.TransformerEncoder(t_transformer_layer, num_layers=params.trf_num_at_layers)
+            self.t_transformer = nn.TransformerEncoder(t_transformer_layer, num_layers=params.trf_num_at_layers)
+        else:
+            self.a_transformer = None
+            self.t_transformer = None
 
         self.v2a_transformer = CustomTransformerEncoderLayer(input_dim = params.trf_model_dim,
                                                              num_heads=params.trf_num_heads, dropout=0.1, hidden_dim=2*params.trf_model_dim)
         self.v2t_transformer = CustomTransformerEncoderLayer(input_dim=params.trf_model_dim, hidden_dim=2*params.trf_model_dim,
                                                              num_heads=params.trf_num_heads, dropout=0.1)
+
+        if params.trf_num_mm_layers > 0:
+            mm_transformer_layer = nn.TransformerEncoderLayer(d_model=3*params.trf_model_dim, nhead=params.trf_num_heads,
+                                                              batch_first=True, dim_feedforward=6*params.trf_model_dim)
+            self.mm_transformer = nn.TransformerEncoder(mm_transformer_layer, num_layers=params.trf_num_mm_layers)
+        else:
+            self.mm_transformer = None
 
         self.dropout = nn.Dropout(0.5)
         self.classification = nn.Linear(3*params.trf_model_dim, 1)
@@ -124,14 +138,20 @@ class CustomMM(nn.Module):
 
         trf_key_mask = ~mask.bool()
         trf_3d_mask = ~get_3d_mask(mask, self.num_heads).bool()
-        v = self.v_transformer(v, src_key_padding_mask = trf_key_mask, mask =trf_3d_mask) # BS, SL, dim
-        a = self.a_transformer(a, src_key_padding_mask = trf_key_mask, mask=trf_3d_mask) # BS, SL ,dim
-        t = self.t_transformer(t, src_key_padding_mask = trf_key_mask, mask=trf_3d_mask) # BS, SL, dim
+        if not self.v_transformer is None:
+            v = self.v_transformer(v, src_key_padding_mask = trf_key_mask, mask =trf_3d_mask) # BS, SL, dim
+        if not self.a_transformer is None:
+            a = self.a_transformer(a, src_key_padding_mask = trf_key_mask, mask=trf_3d_mask) # BS, SL ,dim
+            t = self.t_transformer(t, src_key_padding_mask = trf_key_mask, mask=trf_3d_mask) # BS, SL, dim
 
         a = self.v2a_transformer(query=v, key=a, value=a, key_padding_mask=trf_key_mask, attn_mask=trf_3d_mask)
         t = self.v2t_transformer(query=v, key=t, value=t, key_padding_mask=trf_key_mask, attn_mask=trf_3d_mask)
 
         representation = torch.concatenate([v,a,t], dim=-1)
+
+        if not self.mm_transformer is None:
+            representation = self.mm_transformer(representation, src_key_padding_mask = trf_key_mask, mask=trf_3d_mask)
+
         representation = self.pooling(representation)
         return self.classification(self.dropout(representation))
 
