@@ -465,7 +465,7 @@ if __name__ == '__main__':
                     # folds
                 coach_scores = []
                 for i in tqdm(range(len(COACHES))):
-                    tb_dir = os.path.join(res_dir, 'tb', f'{n}_{seed}_{i}')
+                    tb_dir = os.path.join(res_dir, 'tb', 'hp_search', f'{n}_{seed}_{i}')
                     tb = SummaryWriter(tb_dir)
                     (train_features, train_labels), (val_features, val_labels) = loo_mm_dcts(feature_dcts, label_dcts, leave_out=i)
 
@@ -556,7 +556,8 @@ if __name__ == '__main__':
 
         for seed in range(args.seed, args.seed+args.num_seeds):
                 # stratified sampling to obtain a development set
-            tb_dir = os.path.join(res_dir, 'tb', f'best_config_{i}_{seed}')
+            tb_dir = os.path.join(res_dir, 'tb', 'best', f'best_config_{i}_{seed}')
+            os.makedirs(tb_dir, exist_ok=True)
             writer = SummaryWriter(tb_dir)
             torch.manual_seed(seed)
             np.random.seed(seed)
@@ -617,10 +618,14 @@ if __name__ == '__main__':
             torch.save(best_state_dict, cp_file)
 
     # fix res dct
+    # res_dict['results'] = res_dict['results']["_".join([args.features_v, args.features_a, args.features_t])]['results']
+    # res_dict['best_config'] = vars(best_config)
+    # json.dump(res_dict, open(result_json, 'w+'))
+
+    for i,summarization_key in enumerate(args.summarization_keys):
+        summarize_results(res_dict, coach_target_file=coach_excels[i], feature_target_file=feature_excels[i],
+                          key=summarization_key)
+
     res_dict['results'] = res_dict['results']["_".join([args.features_v, args.features_a, args.features_t])]['results']
     res_dict['best_config'] = vars(best_config)
     json.dump(res_dict, open(result_json, 'w+'))
-
-    # for i,summarization_key in enumerate(args.summarization_keys):
-    #     summarize_results(res_dict, coach_target_file=coach_excels[i], feature_target_file=feature_excels[i],
-    #                       key=summarization_key)
