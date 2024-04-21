@@ -8,7 +8,8 @@ from global_vars import device
 
 SINUSOID = 'sinus'
 LEARNABLE = 'learn'
-EMB_TYPES = [SINUSOID, LEARNABLE]
+SINUISOD_LEARNABLE = 'learn_sinus'
+EMB_TYPES = [SINUSOID, LEARNABLE, SINUISOD_LEARNABLE]
 
 
 class FFN(torch.nn.Module):
@@ -75,8 +76,9 @@ class CustomMM(nn.Module):
             self.pos_v = nn.Embedding(num_embeddings=params.max_length+1, embedding_dim=params.trf_model_dim)
             self.pos_a = nn.Embedding(num_embeddings=params.max_length+1, embedding_dim=params.trf_model_dim)
             self.pos_t = nn.Embedding(num_embeddings=params.max_length+1, embedding_dim=params.trf_model_dim)
-        elif params.trf_pos_emb == SINUSOID:
-            self.pos_v = create_positional_embeddings_matrix(max_seq_len=params.max_length, dim=params.trf_model_dim)
+        elif params.trf_pos_emb in [SINUSOID, SINUISOD_LEARNABLE]:
+            self.pos_v = create_positional_embeddings_matrix(max_seq_len=params.max_length, dim=params.trf_model_dim,
+                                                             learnable= params.trf_pos_emb == SINUISOD_LEARNABLE)
             self.pos_a = self.pos_v
             self.pos_t = self.pos_v
 
@@ -178,14 +180,14 @@ def get_3d_mask(mask, num_heads):
     return mask3d
 
 # from https://machinelearningmastery.com/a-gentle-introduction-to-positional-encoding-in-transformer-models-part-1/
-def create_positional_embeddings_matrix(max_seq_len, dim, n=10000):
+def create_positional_embeddings_matrix(max_seq_len, dim, n=10000, learnable=False):
     matrix = np.zeros((max_seq_len+1, dim)) # +1 because of zero padding
     for k in range(max_seq_len):
         for i in np.arange(int(dim/2)):
             denominator = np.power(n, 2*i/dim)
             matrix[k, 2*i] = np.sin(k/denominator)
             matrix[k, 2*i+1] = np.cos(k/denominator)
-    return torch.nn.Embedding(num_embeddings=matrix.shape[0], embedding_dim = dim, padding_idx=0, _freeze=True)
+    return torch.nn.Embedding(num_embeddings=matrix.shape[0], embedding_dim = dim, padding_idx=0, _freeze= not learnable)
 
 # test
 # dim_v = 32
