@@ -117,6 +117,8 @@ class CustomMM(nn.Module):
         self.dropout = nn.Dropout(0.5)
         self.classification = nn.Linear(3*params.trf_model_dim, 1)
 
+        self.classification_aux = nn.Linear(3*params.trf_model_dim, 9) if params.aux_weight > 0 else None
+
         self.pooling = nn.MaxPool2d(kernel_size=(4,1), stride=(2,1))
 
 
@@ -155,8 +157,9 @@ class CustomMM(nn.Module):
         if not self.mm_transformer is None:
             representation = self.mm_transformer(representation, src_key_padding_mask = trf_key_mask, mask=trf_3d_mask)
 
-        representation = self.pooling(representation)
-        return self.classification(self.dropout(representation))
+        representation = self.dropout(self.pooling(representation))
+        aux_classification = None if self.classification_aux is None else self.classification_aux(representation)[:,0,:]
+        return self.classification(representation), aux_classification
 
 
 def indices_from_mask(mask):

@@ -69,6 +69,7 @@ def parse_args():
     parser.add_argument('--epochs', type=int, default=20)
     parser.add_argument('--patience', type=int, default=3)
     parser.add_argument('--max_training_length', type=int, default=128)
+    parser.add_argument('--aux_weight', type=float, default=[0.], nargs='+')
 
     ##### FOR CHECKPOINT EVALUATION ####
     parser.add_argument('--eval_cp_only', action='store_true')
@@ -79,6 +80,8 @@ def parse_args():
 
 
     args = parser.parse_args()
+    for aux_w in args.aux_weight:
+        assert 0 <= aux_w and aux_w < 1
 
     if args.normalize is None:
         args.normalize = [False] * 3
@@ -116,20 +119,26 @@ class MMDataset(Dataset):
             self.Xs.append(m_features)
         flat_labels = {}
         self.labels = []
+        self.coaches = []
         for d in label_dcts:
             flat_labels.update(d)
+            coach = list(d.keys())[0].split("_")[0]
+            self.coaches.extend([coach] * len(d))
         min_length = np.min([a.shape[0] for a in flat_labels.values()])
         print([s for s in flat_labels.keys() if flat_labels[s].shape[0] < 4])
         #print()
         for segment in all_segments:
             self.labels.append(flat_labels[segment])
+        # coaches to numbers
+        coach2id = {c:i for i,c in enumerate(sorted(list(set(self.coaches))))}
+        self.coaches = [coach2id[c] for c in self.coaches]
 
 
     def __len__(self):
         return len(self.labels)
 
     def __getitem__(self, item):
-        return (self.Xs[0][item], self.Xs[1][item], self.Xs[2][item]), self.labels[item]
+        return (self.Xs[0][item], self.Xs[1][item], self.Xs[2][item]), self.coaches[item], self.labels[item]
 
     def get_dims(self):
         return self.Xs[0][0].shape[1], self.Xs[1][0].shape[1], self.Xs[2][0].shape[1]
@@ -153,7 +162,7 @@ def mm_collate_fn(batch, ignore_index=-100):
     X_ts = [b[0][2] for b in batch]
     #assert all(X.shape[0]==X_vs.shape[0] for X in [X_as, X_ts])
     # always pad to multiple of 2 or 4, depending on label length
-    labels = [np.expand_dims(b[1], 0) for b in batch]
+    labels = [np.expand_dims(b[2], 0) for b in batch]
     max_label_len = np.max([l.shape[1] for l in labels])
     # x_pad_factor = 4 if max_label_len % 2 == 0 else 2
     #x_pad_factor = 4
@@ -175,19 +184,21 @@ def mm_collate_fn(batch, ignore_index=-100):
             break
     #print(max_x_len, max_label_len, pad_to)
     masks = create_mask(lens, pad_to=pad_to)
-    # TODO pad Xs
+
     X_padded_v = [np.pad(x, ((0, pad_to - x.shape[0]), (0,0))) for x in X_vs]
     X_vs = np.vstack([np.expand_dims(x, 0) for x in X_padded_v])
     X_padded_a = [np.pad(x, ((0, pad_to - x.shape[0]), (0, 0))) for x in X_as]
     X_as = np.vstack([np.expand_dims(x, 0) for x in X_padded_a])
     X_padded_t = [np.pad(x, ((0, pad_to - x.shape[0]), (0, 0))) for x in X_ts]
     X_ts = np.vstack([np.expand_dims(x, 0) for x in X_padded_t])
-    # TODO pad labels
-    labels = [np.expand_dims(b[1], 0) for b in batch]
-    max_label_len = np.max([l.shape[1] for l in labels])
+
+    #labels = [np.expand_dims(b[2], 0) for b in batch]
+    #max_label_len = np.max([l.shape[1] for l in labels])
     labels = [np.pad(l, ((0,0), (0, max_label_len - l.shape[1])), constant_values=ignore_index) for l in labels]
     labels = np.vstack(labels)
-    return (torch.FloatTensor(X_vs), torch.FloatTensor(X_as), torch.FloatTensor(X_ts)), torch.tensor(masks), torch.tensor(labels)
+
+    coaches = [b[1] for b in batch]
+    return (torch.FloatTensor(X_vs), torch.FloatTensor(X_as), torch.FloatTensor(X_ts)), torch.LongTensor(coaches), torch.tensor(masks), torch.tensor(labels)
 
 
 def init_model(params:Namespace, seed:int, num_classes:int=2):
@@ -210,15 +221,18 @@ def init_weights(y:np.ndarray):
 
 
 
-def training_epoch(model, optimizer, train_loader, loss_fn, writer, prev_steps):
+def training_epoch(model, optimizer, train_loader, loss_fn, writer, prev_steps, loss_fn_aux=None, aux_weight=0.):
     model.train()
     step_counter = prev_steps
+    if not aux_weight is None:
+        aux_weight = torch.Tensor([aux_weight]).to(device)
+        main_weight = torch.Tensor([1 - aux_weight]).to(device)
     for batch in tqdm(train_loader):
         step_counter += 1
         optimizer.zero_grad()
-        Xs, masks, y = batch
+        Xs, coaches, masks, y = batch
 
-        logits = model(Xs[0].to(device), Xs[1].to(device), Xs[2].to(device), masks.to(device))
+        logits, logits_aux = model(Xs[0].to(device), Xs[1].to(device), Xs[2].to(device), masks.to(device))
         #print(logits.shape)
         logits = logits.squeeze(-1)
         #print(logits.shape)
@@ -228,9 +242,15 @@ def training_epoch(model, optimizer, train_loader, loss_fn, writer, prev_steps):
         y = y[valid_idxs]
         logits = logits[valid_idxs]
         loss = loss_fn(logits, y.float().to(device))
+        main_loss_value = loss.detach().cpu().numpy()
+        if not logits_aux is None:
+            loss_aux = loss_fn_aux(logits_aux, coaches.to(device))
+            loss = main_weight * loss + aux_weight * loss_aux
         loss.backward()
         if not writer is None:
-            writer.add_scalar('train_loss', loss.detach().cpu().numpy(), step_counter)
+            writer.add_scalar('train_loss', main_loss_value, step_counter)
+            if not logits_aux is None:
+                writer.add_scalar('train_w_aux', loss.detach().cpu().numpy(), step_counter)
         optimizer.step()
     return model, step_counter
 
@@ -249,8 +269,9 @@ def extract_logits_and_gs(model:GRUClassifier, val_loader:DataLoader):
 
     with torch.no_grad():
         for batch in val_loader:
-            Xs, masks, y = batch
-            logits = model(Xs[0].to(device), Xs[1].to(device), Xs[2].to(device), masks.to(device)).squeeze(-1)
+            Xs, _, masks, y = batch
+            # ignore coach predictions
+            logits = model(Xs[0].to(device), Xs[1].to(device), Xs[2].to(device), masks.to(device))[0].squeeze(-1)
             valid_idxs = y > -100
             logits = logits[valid_idxs]
             y = y[valid_idxs]
@@ -321,8 +342,8 @@ def extract_predictions(model:GRUClassifier, test_loader:DataLoader) -> dict:
     return {f'pred_{i}':predictions[:,i] for i in range(predictions.shape[1])}
 
 
-def training(model:GRUClassifier, optimizer:torch.optim.Optimizer, loss_fn, epochs, patience, train_loader, val_loader, writer: SummaryWriter)\
-        -> Tuple[float, GRUClassifier]:
+def training(model:GRUClassifier, optimizer:torch.optim.Optimizer, loss_fn, epochs, patience, train_loader, val_loader,
+            writer: SummaryWriter, aux_weight, aux_loss_fn) -> Tuple[float, GRUClassifier]:
     '''
 
     Training routine
@@ -335,7 +356,9 @@ def training(model:GRUClassifier, optimizer:torch.optim.Optimizer, loss_fn, epoc
     step_counter=0
     for epoch in range(1, epochs+1):
         print(f'Epoch {epoch}')
-        model, step_counter = training_epoch(model, optimizer, train_loader=train_loader, loss_fn=loss_fn, writer=writer, prev_steps=step_counter)
+        model, step_counter = training_epoch(model, optimizer, train_loader=train_loader, loss_fn=loss_fn,
+                                             writer=writer, prev_steps=step_counter, aux_weight=aux_weight,
+                                             loss_fn_aux=aux_loss_fn)
         epoch_result = val_score(model, val_loader)
         if not (writer is None):
             writer.add_scalar('auc', epoch_result, epoch)
@@ -353,6 +376,7 @@ def training(model:GRUClassifier, optimizer:torch.optim.Optimizer, loss_fn, epoc
     return best_quality, model
 
 
+# TODO check
 def checkpoint_eval_only(db, config, cp_file_dir:str, feature:str, normalize:bool, target:str, target_json:str):
     '''
 
@@ -392,9 +416,10 @@ if __name__ == '__main__':
 
     configurations = [
         Namespace(**{'trf_num_heads': c[0], 'trf_num_v_layers': c[1], 'trf_num_at_layers': c[2], 'lr': c[3],
-                     'regularization': c[4], 'trf_pos_emb': c[5], 'trf_model_dim': c[6], 'trf_num_mm_layers': c[7]}) for c in
+                     'regularization': c[4], 'trf_pos_emb': c[5], 'trf_model_dim': c[6], 'trf_num_mm_layers': c[7],
+                     'aux_weight': c[8]}) for c in
         product(args.trf_num_heads, args.trf_num_v_layers, args.trf_num_at_layers, args.lr, args.regularization,
-                args.trf_pos_emb, args.trf_model_dim, args.trf_num_mm_layers)]
+                args.trf_pos_emb, args.trf_model_dim, args.trf_num_mm_layers, args.aux_weight)]
 
     # TODO adapt later
     if args.eval_cp_only:
@@ -423,7 +448,7 @@ if __name__ == '__main__':
 
     res_dict = {'config': {'params': {k:vars(args)[k] for k in ['trf_num_heads', 'trf_num_v_layers', 'trf_num_at_layers',
                                                                 'lr', 'regularization', 'trf_pos_emb', 'trf_model_dim',
-                                                                'trf_num_mm_layers']},
+                                                                'trf_num_mm_layers', 'aux_weight']},
                            'target': target_col,
                            'cli_args': vars(args)},
                 'results': {}}
@@ -497,7 +522,8 @@ if __name__ == '__main__':
                     loss_fn = BCEWithLogitsLoss(pos_weight=weights[1].to(device), reduction='mean')
 
                     coach_scores.append(training(model, optimizer, loss_fn, epochs=args.epochs, patience=args.patience,
-                                                     train_loader=train_loader, val_loader=val_loader, writer=tb)[0])
+                                                     train_loader=train_loader, val_loader=val_loader, writer=tb,
+                                                 aux_weight=config.aux_weight, aux_loss_fn=nn.CrossEntropyLoss())[0])
                     tb.close()
                 seed_scores.append(np.mean(coach_scores))
 
@@ -593,7 +619,8 @@ if __name__ == '__main__':
 
             # TODO continue here (cf. above)
             q, model = training(model, optimizer, loss_fn, epochs=args.epochs, patience=args.patience,
-                                             train_loader=train_loader, val_loader=val_loader, writer=writer)
+                                             train_loader=train_loader, val_loader=val_loader, writer=writer,
+                                aux_weight=config.aux_weight, aux_loss_fn=nn.CrossEntropyLoss())
             seed_scores.append(test_evaluation(model, test_loader))
             if q > best_test_seed_quality:
                 best_test_seed_quality = q
