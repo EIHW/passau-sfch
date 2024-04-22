@@ -113,11 +113,11 @@ class CustomMM(nn.Module):
         else:
             self.mm_transformer = None
 
-        self.dropout_initial = nn.Dropout(0.5)
+
         self.dropout = nn.Dropout(0.5)
         self.classification = nn.Linear(3*params.trf_model_dim, 1)
 
-        self.pooling = nn.MaxPool2d(kernel_size=(4,1), stride=(2,1))
+        self.pooling = nn.AvgPool2d(kernel_size=(4,1), stride=(2,1))
 
 
     def forward(self, v:torch.Tensor, a, t, mask):
@@ -137,11 +137,6 @@ class CustomMM(nn.Module):
         v = v + v_pos
         a = a + a_pos
         t = t + t_pos
-
-        # TODO remove this again if it does not help
-        v = self.dropout_initial(v)
-        a = self.dropout_initial(a)
-        t = self.dropout_initial(t)
 
 
         trf_key_mask = ~mask.bool()
