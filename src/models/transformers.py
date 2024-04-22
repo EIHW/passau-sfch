@@ -117,7 +117,7 @@ class CustomMM(nn.Module):
         self.dropout = nn.Dropout(0.5)
         self.classification = nn.Linear(3*params.trf_model_dim, 1)
 
-        self.pooling = nn.AvgPool2d(kernel_size=(4,1), stride=(2,1))
+        self.pooling = nn.MaxPool2d(kernel_size=(4,1), stride=(2,1))
 
 
     def forward(self, v:torch.Tensor, a, t, mask):
