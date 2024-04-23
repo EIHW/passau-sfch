@@ -74,9 +74,12 @@ class CustomMM(nn.Module):
 
         # TODO weight sharing?
         if params.trf_pos_emb == LEARNABLE:
+            # now with weight sharing
             self.pos_v = nn.Embedding(num_embeddings=params.max_length+1, embedding_dim=params.trf_model_dim)
-            self.pos_a = nn.Embedding(num_embeddings=params.max_length+1, embedding_dim=params.trf_model_dim)
-            self.pos_t = nn.Embedding(num_embeddings=params.max_length+1, embedding_dim=params.trf_model_dim)
+            self.pos_a = self.pos_v
+            self.pos_t = self.pos_v
+            #self.pos_a = nn.Embedding(num_embeddings=params.max_length+1, embedding_dim=params.trf_model_dim)
+            #self.pos_t = nn.Embedding(num_embeddings=params.max_length+1, embedding_dim=params.trf_model_dim)
         elif params.trf_pos_emb in [SINUSOID, SINUISOD_LEARNABLE]:
             self.pos_v = create_positional_embeddings_matrix(max_seq_len=params.max_length, dim=params.trf_model_dim,
                                                              learnable= params.trf_pos_emb == SINUISOD_LEARNABLE)
