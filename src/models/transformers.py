@@ -3,6 +3,7 @@ from argparse import Namespace
 import torch.nn as nn
 import torch
 import numpy as np
+import random
 
 from global_vars import device
 
@@ -158,7 +159,14 @@ class CustomMM(nn.Module):
             representation = self.mm_transformer(representation, src_key_padding_mask = trf_key_mask, mask=trf_3d_mask)
 
         representation = self.dropout(self.pooling(representation))
-        aux_classification = None if self.classification_aux is None else self.classification_aux(representation)[:,0,:]
+        if not self.classification_aux is None:
+            min_seq_length = max(0, int(np.min(np.sum(mask.detach().cpu().numpy(), axis=1).astype(np.int32))/2) - 2)
+            #random_idxs = [int(random.randint(0, s-1)/2) for s in seq_lengths]
+            #random_idxs = torch.tensor(random_idxs).unsqueeze(-1).unsqueeze(-1).to(device)
+            aux_logits = representation[:,min_seq_length,:] # BS, dim
+            aux_classification = self.classification_aux(aux_logits)
+        else:
+            aux_classification = None
         return self.classification(representation), aux_classification
 
 
