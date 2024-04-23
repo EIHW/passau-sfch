@@ -1,6 +1,7 @@
 from argparse import Namespace
 
 import torch.nn as nn
+import torch.nn.functional as F
 import torch
 import numpy as np
 import random
@@ -23,6 +24,22 @@ class FFN(torch.nn.Module):
 
     def forward(self, input_seq):
         return self.linear2(self.relu(self.linear1(input_seq)))
+
+
+class GatedFusion(torch.nn.Module):
+    def __init__(self, input_dim, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.Wa = nn.Linear(input_dim, input_dim)
+        self.Wb = nn.Linear(input_dim, input_dim)
+        self.Wcomb = nn.Linear(2*input_dim, input_dim)
+
+    def forward(self, input_a, input_b):
+        ha = F.tanh(self.Wa(input_a)) # BS, SL, dim
+        hb = F.tanh(self.Wb(input_b)) # BS, SL, dim
+        comb = torch.concatenate([input_a, input_b], dim=-1) # BS, SL, 2*dim
+        z = F.sigmoid(self.Wcomb(comb)) # BS, SL, dim
+        h = z * ha + (1-z) * hb
+        return h
 
 
 # class LRScheduler(LearningRateSchedule):
@@ -251,8 +268,9 @@ V_ONLY = 'v_only'
 AVG = 'avg_pool'
 AVG_LOGITS = 'avg_logits'
 NEW = 'new'
+GATED = 'gated'
 
-MODEL_TYPES = [FULL, NO_POS, NO_FUSION, V_ONLY, AVG, AVG_LOGITS, NEW]
+MODEL_TYPES = [FULL, NO_POS, NO_FUSION, V_ONLY, AVG, AVG_LOGITS, NEW, GATED]
 
 def get_model_class(model_type):
     if model_type == FULL:
@@ -269,8 +287,120 @@ def get_model_class(model_type):
         return CustomMM_AvgAfterLogits
     elif model_type == NEW:
         return CustomMM_New
+    elif model_type == GATED:
+        return GatedMM
     else:
         raise NotImplementedError()
+
+class GatedMM(nn.Module):
+
+    def __init__(self, params, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.a_projection = nn.Linear(params.a_dim, params.trf_model_dim)
+        self.t_projection = nn.Linear(params.t_dim, params.trf_model_dim)
+        self.v_projection = nn.Linear(params.v_dim, params.trf_model_dim)
+        self.tanh = nn.Tanh()
+
+        self.num_heads = params.trf_num_heads
+
+        if params.trf_pos_emb == LEARNABLE:
+            # now with weight sharing
+            self.pos_v = nn.Embedding(num_embeddings=params.max_length+1, embedding_dim=params.trf_model_dim)
+            self.pos_a = self.pos_v
+            self.pos_t = self.pos_v
+            #self.pos_a = nn.Embedding(num_embeddings=params.max_length+1, embedding_dim=params.trf_model_dim)
+            #self.pos_t = nn.Embedding(num_embeddings=params.max_length+1, embedding_dim=params.trf_model_dim)
+        elif params.trf_pos_emb in [SINUSOID, SINUISOD_LEARNABLE]:
+            self.pos_v = create_positional_embeddings_matrix(max_seq_len=params.max_length, dim=params.trf_model_dim,
+                                                             learnable= params.trf_pos_emb == SINUISOD_LEARNABLE)
+            self.pos_a = self.pos_v
+            self.pos_t = self.pos_v
+
+
+        if params.trf_num_v_layers > 0:
+            v_transformer_layer = nn.TransformerEncoderLayer(d_model=params.trf_model_dim, nhead=params.trf_num_heads,
+                                                              batch_first=True, dim_feedforward=2*params.trf_model_dim)
+            self.v_transformer = nn.TransformerEncoder(v_transformer_layer, num_layers=params.trf_num_v_layers)
+        else:
+            self.v_transformer = None
+
+        if params.trf_num_at_layers > 0:
+            a_transformer_layer = nn.TransformerEncoderLayer(d_model=params.trf_model_dim, nhead=params.trf_num_heads,
+                                                              batch_first=True, dim_feedforward=2*params.trf_model_dim)
+            self.a_transformer = nn.TransformerEncoder(a_transformer_layer, num_layers=params.trf_num_at_layers)
+            t_transformer_layer = nn.TransformerEncoderLayer(d_model=params.trf_model_dim, nhead=params.trf_num_heads,
+                                                         batch_first=True, dim_feedforward=2*params.trf_model_dim)
+            self.t_transformer = nn.TransformerEncoder(t_transformer_layer, num_layers=params.trf_num_at_layers)
+        else:
+            self.a_transformer = None
+            self.t_transformer = None
+
+        self.at_fusion = GatedFusion(input_dim = params.trf_model_dim)
+
+        self.v2at_transformer = CustomTransformerEncoderLayer(input_dim = params.trf_model_dim,
+                                                             num_heads=params.trf_num_heads, dropout=0.1, hidden_dim=2*params.trf_model_dim)
+
+        if params.trf_num_mm_layers > 0:
+            mm_transformer_layer = nn.TransformerEncoderLayer(d_model=2*params.trf_model_dim, nhead=params.trf_num_heads,
+                                                              batch_first=True, dim_feedforward=4*params.trf_model_dim)
+            self.mm_transformer = nn.TransformerEncoder(mm_transformer_layer, num_layers=params.trf_num_mm_layers)
+        else:
+            self.mm_transformer = None
+
+
+        self.dropout = nn.Dropout(0.5)
+        self.classification = nn.Linear(2*params.trf_model_dim, 1)
+
+        #self.classification_aux = nn.Linear(3*params.trf_model_dim, 9) if params.aux_weight > 0 else None
+
+        self.pooling = nn.MaxPool2d(kernel_size=(4,1), stride=(2,1))
+
+
+    def forward(self, v:torch.Tensor, a, t, mask):
+        #print(v.get_device())
+        #print(a.get_device())
+        #print(t.get_device())
+        #print(self.a_projection.weight.get_device())
+        #print(self.a_projection.bias.get_device())
+        v = self.tanh(self.v_projection(v))
+        a = self.tanh(self.a_projection(a)) # BS, SL, dim
+        t = self.tanh(self.t_projection(t)) # BS, SL, dim
+
+        emb_indices = indices_from_mask(mask)
+        v_pos = self.pos_v(emb_indices)
+        a_pos = self.pos_a(emb_indices)
+        t_pos = self.pos_t(emb_indices)
+        v = v + v_pos
+        a = a + a_pos
+        t = t + t_pos
+
+
+        trf_key_mask = ~mask.bool()
+        trf_3d_mask = ~get_3d_mask(mask, self.num_heads).bool()
+        if not self.v_transformer is None:
+            v = self.v_transformer(v, src_key_padding_mask = trf_key_mask, mask =trf_3d_mask) # BS, SL, dim
+        if not self.a_transformer is None:
+            a = self.a_transformer(a, src_key_padding_mask = trf_key_mask, mask=trf_3d_mask) # BS, SL ,dim
+            t = self.t_transformer(t, src_key_padding_mask = trf_key_mask, mask=trf_3d_mask) # BS, SL, dim
+
+        at = self.at_fusion(a, t) # BS, SL, dim
+        at = self.v2at_transformer(query=v, key=at, value=at, key_padding_mask=trf_key_mask, attn_mask=trf_3d_mask) # BS, SL, dim
+
+        representation = torch.concatenate([v,at], dim=-1) # BS, SL, 2*dim
+
+        if not self.mm_transformer is None:
+            representation = self.mm_transformer(representation, src_key_padding_mask = trf_key_mask, mask=trf_3d_mask)
+
+        representation = self.dropout(self.pooling(representation))
+        # if not self.classification_aux is None:
+        #     min_seq_length = max(0, int(np.min(np.sum(mask.detach().cpu().numpy(), axis=1).astype(np.int32))/2) - 2)
+        #     #random_idxs = [int(random.randint(0, s-1)/2) for s in seq_lengths]
+        #     #random_idxs = torch.tensor(random_idxs).unsqueeze(-1).unsqueeze(-1).to(device)
+        #     aux_logits = representation[:,min_seq_length,:] # BS, dim
+        #     aux_classification = self.classification_aux(aux_logits)
+        # else:
+        #     aux_classification = None
+        return self.classification(representation), None
 
 # DUMMY CLASSES
 class CustomMM_New(nn.Module):
