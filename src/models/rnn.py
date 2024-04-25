@@ -1,5 +1,6 @@
+import torch
 import torch.nn as nn
-from torch.nn.utils.rnn import pack_padded_sequence
+from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 
 class GRUClassifier(nn.Module):
@@ -30,3 +31,34 @@ class GRUClassifier(nn.Module):
         x_out = last_layer.reshape(batch_size, self.num_directions * self.hidden_dim) # (BS, ND*dim)
 
         return self.linear(self.dropout(x_out))
+
+
+class GRUEncoder(nn.Module):
+    '''
+    GRU layers (bidirectional or unidirectional)
+    '''
+
+    def __init__(self, input_size, hidden_dim):
+        super().__init__()
+        self.num_layers = 1
+        self.hidden_dim = hidden_dim
+        self.num_directions = 2
+
+        self.gru = nn.GRU(input_size=input_size, hidden_size=int(self.hidden_dim/2), num_layers=self.num_layers,
+                          batch_first=True, bidirectional=self.num_directions==2)
+        self.rnn_out_dim = self.num_directions * self.hidden_dim
+
+
+    def forward(self, input, mask):
+        lengths = torch.sum(mask.detach(), dim=1)
+        x = pack_padded_sequence(input, lengths.cpu(), batch_first=True, enforce_sorted=False) # BS, SL, feature_dim
+        rnn_enc = self.gru(x)
+        outs = rnn_enc[0] # (BS, SL, dim)
+        outs, _ = pad_packed_sequence(outs, batch_first=True)
+        if mask.shape[1] > torch.max(lengths):
+            pad_tensor = torch.zeros((mask.shape[0], mask.shape[1] - int(torch.max(lengths).item()), outs.shape[2]))
+            outs = torch.concatenate([outs, pad_tensor], dim=1)
+
+        return outs
+
+
