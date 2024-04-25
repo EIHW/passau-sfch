@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
+from global_vars import device
+
 
 class GRUClassifier(nn.Module):
     '''
@@ -57,7 +59,7 @@ class GRUEncoder(nn.Module):
         outs, _ = pad_packed_sequence(outs, batch_first=True)
         if mask.shape[1] > torch.max(lengths):
             pad_tensor = torch.zeros((mask.shape[0], mask.shape[1] - int(torch.max(lengths).item()), outs.shape[2]))
-            outs = torch.concatenate([outs, pad_tensor], dim=1)
+            outs = torch.concatenate([outs, pad_tensor.to(device)], dim=1)
 
         return outs
 
