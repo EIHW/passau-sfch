@@ -215,7 +215,7 @@ def get_3d_mask(mask, num_heads, context_size=None):
             # padded part: allow attention to all elements to avoid nan
             context_mask[i, seq_len:, :] = 1.
         #context_mask = np.vstack([np.expand_dims(context_mask, 0)] * bs) # BS, SL, SL
-        context_mask = torch.Tensor(context_mask)
+        context_mask = torch.Tensor(context_mask).to(device)
         mask3d = torch.repeat_interleave(mask, sl, dim=0)
         mask3d = torch.reshape(mask3d, (bs, sl, sl))  # BS, SL, SL
         mask3d = mask3d * context_mask # BS, SL, SL
