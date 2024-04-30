@@ -57,6 +57,7 @@ def parse_args():
     parser.add_argument('--trf_pos_emb', type=str, nargs='+', choices=EMB_TYPES, default=EMB_TYPES)
     parser.add_argument('--trf_model_dim', type=int, nargs='+', default=[64])
     parser.add_argument('--model_type', type=str, choices=MODEL_TYPES, default=FULL)
+    parser.add_argument('--context_window', type=str, required=False, nargs='+', help='Integer or "None"')
     # training parameters
     parser.add_argument('--lr', type=float, nargs='+', default=[0.01, 0.001, 0.005, 0.0001, 0.0005])
     parser.add_argument('--num_seeds', type=int, default=5)
@@ -80,6 +81,11 @@ def parse_args():
 
 
     args = parser.parse_args()
+    if args.context_window is None:
+        args.context_window = [None]
+    else:
+        cw = [None if c=='None' else int(c) for c in args.context_window]
+        args.context_window = cw
     for aux_w in args.aux_weight:
         assert 0 <= aux_w and aux_w < 1
 
@@ -417,9 +423,9 @@ if __name__ == '__main__':
     configurations = [
         Namespace(**{'trf_num_heads': c[0], 'trf_num_v_layers': c[1], 'trf_num_at_layers': c[2], 'lr': c[3],
                      'regularization': c[4], 'trf_pos_emb': c[5], 'trf_model_dim': c[6], 'trf_num_mm_layers': c[7],
-                     'aux_weight': c[8]}) for c in
+                     'aux_weight': c[8], 'context_window': c[9]}) for c in
         product(args.trf_num_heads, args.trf_num_v_layers, args.trf_num_at_layers, args.lr, args.regularization,
-                args.trf_pos_emb, args.trf_model_dim, args.trf_num_mm_layers, args.aux_weight)]
+                args.trf_pos_emb, args.trf_model_dim, args.trf_num_mm_layers, args.aux_weight, args.context_window)]
 
     # TODO adapt later
     if args.eval_cp_only:
@@ -448,7 +454,7 @@ if __name__ == '__main__':
 
     res_dict = {'config': {'params': {k:vars(args)[k] for k in ['trf_num_heads', 'trf_num_v_layers', 'trf_num_at_layers',
                                                                 'lr', 'regularization', 'trf_pos_emb', 'trf_model_dim',
-                                                                'trf_num_mm_layers', 'aux_weight']},
+                                                                'trf_num_mm_layers', 'aux_weight', 'context_window']},
                            'target': target_col,
                            'cli_args': vars(args)},
                 'results': {}}

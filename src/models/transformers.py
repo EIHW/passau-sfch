@@ -135,6 +135,7 @@ class CustomMM(nn.Module):
         else:
             self.mm_transformer = None
 
+        self.context_size = params.context_window
 
         self.dropout = nn.Dropout(0.5)
         self.classification = nn.Linear(3*params.trf_model_dim, 1)
@@ -164,7 +165,7 @@ class CustomMM(nn.Module):
 
 
         trf_key_mask = ~mask.bool()
-        trf_3d_mask = ~get_3d_mask(mask, self.num_heads).bool()
+        trf_3d_mask = ~get_3d_mask(mask, self.num_heads, context_size=self.context_size).bool()
         if not self.v_transformer is None:
             v = self.v_transformer(v, src_key_padding_mask = trf_key_mask, mask =trf_3d_mask) # BS, SL, dim
         if not self.a_transformer is None:
@@ -200,14 +201,30 @@ def indices_from_mask(mask):
     masked = full_indices * mask
     return masked.long()
 
-def get_3d_mask(mask, num_heads):
+def get_3d_mask(mask, num_heads, context_size=None):
     # mask is initially BS, SL
     bs = mask.shape[0]
     sl = mask.shape[1]
+    if not context_size is None:
+        context_mask = np.zeros((mask.shape[0], mask.shape[1], mask.shape[1])) # SL, SL
+        seq_lens = torch.sum(mask, dim=1).cpu().numpy()
+        for i in range(context_mask.shape[0]):
+            seq_len = int(seq_lens[i])
+            for j in range(seq_len):
+                context_mask[i, j, max(0, j - context_size): j + context_size+1] = 1.
+            # padded part: allow attention to all elements to avoid nan
+            context_mask[i, seq_len:, :] = 1.
+        #context_mask = np.vstack([np.expand_dims(context_mask, 0)] * bs) # BS, SL, SL
+        context_mask = torch.Tensor(context_mask)
+        mask3d = torch.repeat_interleave(mask, sl, dim=0)
+        mask3d = torch.reshape(mask3d, (bs, sl, sl))  # BS, SL, SL
+        mask3d = mask3d * context_mask # BS, SL, SL
     #mask3d = mask.unsqueeze(-1) # BS, SL, 1
-    mask3d = torch.repeat_interleave(mask, sl, dim=0) # BS, SL*SL
-    mask3d = torch.reshape(mask3d, (bs, sl, sl)) # BS, SL, SL
-    mask3d = torch.repeat_interleave(mask3d, num_heads, dim=0) # BS*NH, SL
+    else:
+        # TODO move up
+        mask3d = torch.repeat_interleave(mask, sl, dim=0) # BS, SL*SL
+        mask3d = torch.reshape(mask3d, (bs, sl, sl)) # BS, SL, SL
+    mask3d = torch.repeat_interleave(mask3d, num_heads, dim=0) # BS*NH, SL, SL
     #control = torch.sum(mask3d, dim=-1) # just for debugging
     #control = torch.mean(control, dim=-1)
     return mask3d
@@ -536,6 +553,8 @@ class GatedMM_GRU(nn.Module):
 
         self.num_heads = params.trf_num_heads
 
+        self.context_size = params.context_window
+
         if params.trf_pos_emb == LEARNABLE:
             # now with weight sharing
             self.pos_v = nn.Embedding(num_embeddings=params.max_length+1, embedding_dim=params.trf_model_dim)
@@ -610,7 +629,7 @@ class GatedMM_GRU(nn.Module):
 
 
         trf_key_mask = ~mask.bool()
-        trf_3d_mask = ~get_3d_mask(mask, self.num_heads).bool()
+        trf_3d_mask = ~get_3d_mask(mask, self.num_heads, context_size=self.context_size).bool()
         if not self.v_transformer is None:
             v = self.v_transformer(v, src_key_padding_mask = trf_key_mask, mask =trf_3d_mask) # BS, SL, dim
         if not self.a_transformer is None:
