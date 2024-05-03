@@ -289,8 +289,9 @@ NEW = 'new'
 GATED = 'gated'
 GATED2 = 'gated2'
 GATED_GRU ='gated_gru'
+MULT = 'mult'
 
-MODEL_TYPES = [FULL, NO_POS, NO_FUSION, V_ONLY, AVG, AVG_LOGITS, NEW, GATED, GATED2, GATED_GRU]
+MODEL_TYPES = [FULL, NO_POS, NO_FUSION, V_ONLY, AVG, AVG_LOGITS, NEW, GATED, GATED2, GATED_GRU, MULT]
 
 def get_model_class(model_type):
     if model_type == FULL:
@@ -313,8 +314,101 @@ def get_model_class(model_type):
         return GatedMM2
     elif model_type == GATED_GRU:
         return GatedMM_GRU
+    elif model_type == MULT:
+        return MulT
     else:
         raise NotImplementedError()
+
+class MulTCM(nn.Module):
+
+    def __init__(self, dim, num_layers, num_heads, dropout=0.1, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.layers = nn.ModuleList([
+            CustomTransformerEncoderLayer(input_dim=dim, hidden_dim=2*dim, num_heads=num_heads, dropout=dropout)
+        ] * num_layers)
+
+    def forward(self, query, key, value, key_padding_mask, attn_mask):
+        prev = self.layers[0](query=query, key=key, value=value, key_padding_mask=key_padding_mask, attn_mask=attn_mask)
+        if len(self.layers) > 1:
+            for i in range(1, len(self.layers)):
+                # query is always the same!
+                new_enc = self.layers[i](query=query, key=prev, value=prev, key_padding_mask=key_padding_mask, attn_mask=attn_mask)
+                prev = new_enc + prev
+        return prev
+
+class MulT(nn.Module):
+
+    def __init__(self, params, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.tanh = nn.Tanh()
+        self.context_size = params.context_window
+        self.num_heads = params.trf_num_heads
+
+        self.a_cnn = nn.Conv1d(params.a_dim, params.trf_model_dim, kernel_size=3, padding='same', bias=False)
+        self.t_cnn = nn.Conv1d(params.t_dim, params.trf_model_dim, kernel_size=3, padding='same', bias=False)
+        self.v_cnn = nn.Conv1d(params.v_dim, params.trf_model_dim, kernel_size=3, padding='same', bias=False)
+
+        self.pos_v = create_positional_embeddings_matrix(max_seq_len=params.max_length, dim=params.trf_model_dim,
+                                                         learnable=False)
+        self.pos_a = self.pos_v
+        self.pos_t = self.pos_v
+
+        assert params.trf_num_at_layers > 0
+        assert params.trf_num_v_layers > 0
+
+        self.a2t = MulTCM(dim=params.trf_model_dim, num_layers=params.trf_num_at_layers, num_heads=params.trf_num_heads)
+        self.v2t = MulTCM(dim=params.trf_model_dim, num_layers=params.trf_num_at_layers, num_heads=params.trf_num_heads)
+        self.t2a = MulTCM(dim=params.trf_model_dim, num_layers=params.trf_num_at_layers, num_heads=params.trf_num_heads)
+        self.v2a = MulTCM(dim=params.trf_model_dim, num_layers=params.trf_num_at_layers, num_heads=params.trf_num_heads)
+        self.a2v = MulTCM(dim=params.trf_model_dim, num_layers=params.trf_num_v_layers, num_heads=params.trf_num_heads)
+        self.t2v = MulTCM(dim=params.trf_model_dim, num_layers=params.trf_num_v_layers, num_heads=params.trf_num_heads)
+
+        self.dropout = nn.Dropout(0.5)
+        self.classification = nn.Linear(6 * params.trf_model_dim, 1)
+
+        self.pooling = nn.MaxPool2d(kernel_size=(4, 1), stride=(2, 1))
+
+    def forward(self, v: torch.Tensor, a, t, mask):
+        v = torch.transpose(v, 1, 2) # BS, V, SL
+        v = self.v_cnn(v) # BS, dim, SL
+        v = torch.transpose(v, 1, 2) # BS, SL, dim
+        v = self.tanh(v)
+
+        a = torch.transpose(a, 1, 2)  # BS, A, SL
+        a = self.a_cnn(a)  # BS, dim, SL
+        a = torch.transpose(a, 1, 2)  # BS, SL, dim
+        a = self.tanh(a)
+
+        t = torch.transpose(t, 1, 2)  # BS, V, SL
+        t = self.t_cnn(t)  # BS, dim, SL
+        t = torch.transpose(t, 1, 2)  # BS, SL, dim
+        t = self.tanh(t)
+
+        emb_indices = indices_from_mask(mask)
+        v_pos = self.pos_v(emb_indices)
+        a_pos = self.pos_a(emb_indices)
+        t_pos = self.pos_t(emb_indices)
+        v = v + v_pos
+        a = a + a_pos
+        t = t + t_pos
+
+        trf_key_mask = ~mask.bool()
+        trf_3d_mask = ~get_3d_mask(mask, self.num_heads, context_size=self.context_size).bool()
+
+        a2t = self.a2t(query = a, key=t, value=t, key_padding_mask=trf_key_mask, attn_mask=trf_3d_mask)
+        a2v = self.a2v(query=a, key=v, value=v, key_padding_mask=trf_key_mask, attn_mask=trf_3d_mask)
+        t2a = self.a2t(query=t, key=a, value=a, key_padding_mask=trf_key_mask, attn_mask=trf_3d_mask)
+        t2v = self.a2v(query=t, key=v, value=v, key_padding_mask=trf_key_mask, attn_mask=trf_3d_mask)
+        v2a = self.a2t(query=v, key=a, value=a, key_padding_mask=trf_key_mask, attn_mask=trf_3d_mask)
+        v2t = self.a2v(query=v, key=t, value=t, key_padding_mask=trf_key_mask, attn_mask=trf_3d_mask)
+
+        representation = torch.concatenate([a2t, a2v, t2a, t2v, v2a, v2t], dim=-1) # BS, SL, 6*dim
+        representation = self.dropout(self.pooling(representation))
+
+        return self.classification(representation), None
+
+
+
 
 
 class GatedMM2(nn.Module):
